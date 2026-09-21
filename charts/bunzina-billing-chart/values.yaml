@@ -1,0 +1,75 @@
+app-chart:
+  namespace: bunzina
+
+  app:
+    name: bunzina-billing
+    image:
+      repository: __AWS_ACCOUNT_ID__.dkr.ecr.us-east-1.amazonaws.com/bunzina-billing
+      tag: ""
+      pullPolicy: IfNotPresent
+    replicaCount: 2
+    containerPort: 3000
+    service:
+      type: ClusterIP
+      port: 80
+    ingress:
+      enabled: true
+      className: alb
+      annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/healthcheck-path: /health
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPU: 70
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+    probes:
+      path: /health
+      livenessPath: /health
+      readinessPath: /ready
+    metrics:
+      enabled: true
+      path: /metrics
+      port: 3000
+      serviceMonitor:
+        enabled: true
+        interval: 15s
+        scrapeTimeout: 10s
+    config:
+      APP_ENV: "prod"
+      PROD_DB_HOST: "bunzina-billing-postgres"
+      PROD_DB_PORT: "5432"
+      PROD_DB_NAME: "bunzina-billing"
+      RABBITMQ_EXCHANGE: "bunzina.events"
+      RABBITMQ_QUEUE: "bunzina-billing.inbox"
+      # Aponta para o release `bunzina-observability` (namespace `observability`).
+      # Sem essa env var o tracing.ts nem inicializa.
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy-gateway.observability.svc.cluster.local:4318"
+      OTEL_SERVICE_NAME: "bunzina-billing"
+
+  # Cada serviço tem o seu banco (ADR 0012). O app-chart sobe o Postgres deste
+  # serviço; o bunzina-workshop desliga isto e usa o MongoDB Atlas (ADR 0014).
+  database:
+    enabled: true
+    name: bunzina-billing-postgres
+    image: postgres:15
+    port: 5432
+    persistence:
+      storage: 5Gi
+      storageClassName: gp3
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"

@@ -1,0 +1,13 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+
+# code coverage
+coverage
+
+# helm
+charts/**/charts
+charts/**/Chart.lock
+values.secret.yaml

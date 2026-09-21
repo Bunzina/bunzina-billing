@@ -1,0 +1,65 @@
+name: CI (PR)
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  lint-format:
+    name: lint-format/check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run lint and format checks
+        run: |
+          bun lint
+          bun fmt:check
+
+  test:
+    name: test/coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # O Sonar precisa do histórico para atribuir código novo a um autor.
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      # O bunfig.ci.toml tem coverageThreshold de 80%; abaixo disso este passo
+      # falha e o PR não passa. É o gate de cobertura exigido pela Fase 4.
+      - name: Run tests with coverage
+        run: bun test --config=./bunfig.ci.toml
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

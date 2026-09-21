@@ -1,0 +1,58 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./:/app
+      - /app/.bun
+    environment:
+      - APP_ENV=dev
+      - DATABASE_URL=postgres://bun:bun@db:5432/bunzina-billing
+      - RABBITMQ_URL=amqp://bunzina:bunzina@rabbitmq:5672
+      - RABBITMQ_EXCHANGE=bunzina.events
+      - RABBITMQ_QUEUE=bunzina-billing.inbox
+      - OTEL_SERVICE_NAME=bunzina-billing
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: ['bun', 'run', 'start:dev']
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: bunzina-billing
+      POSTGRES_USER: bun
+      POSTGRES_PASSWORD: bun
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bun -d bunzina-billing']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # O mesmo broker que roda no cluster (ADR 0015). A paridade é o que permite
+  # ensaiar falha e compensação antes de gravar o vídeo.
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: bunzina
+      RABBITMQ_DEFAULT_PASS: bunzina
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db-data:

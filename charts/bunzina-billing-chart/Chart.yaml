@@ -1,0 +1,10 @@
+apiVersion: v2
+name: bunzina-billing-chart
+description: Umbrella chart do bunzina-billing — consome o app-chart genérico
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: app-chart
+    version: "0.2.0"
+    repository: "oci://__AWS_ACCOUNT_ID__.dkr.ecr.us-east-1.amazonaws.com"
