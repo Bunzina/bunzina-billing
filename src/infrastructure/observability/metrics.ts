@@ -66,6 +66,9 @@ const getStatusCode = (status: number | string | undefined): string => {
 // normalizar, um id por request vira uma série temporal por request.
 const dynamicRoutePatterns: Array<[RegExp, string]> = [];
 
+const UUID_SEGMENT =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
 export const normalizeRoute = (pathname: string): string => {
   for (const [pattern, route] of dynamicRoutePatterns) {
     if (pattern.test(pathname)) {
@@ -73,7 +76,10 @@ export const normalizeRoute = (pathname: string): string => {
     }
   }
 
-  return pathname || '/';
+  // Rede de segurança para o que escapar dos padrões acima: um id cru vira um
+  // label novo a cada request, e cardinalidade sem teto derruba o Prometheus
+  // antes de derrubar o serviço.
+  return pathname.replace(UUID_SEGMENT, ':id') || '/';
 };
 
 const getRequestLabels = (

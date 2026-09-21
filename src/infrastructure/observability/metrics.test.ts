@@ -44,3 +44,19 @@ describe('createHttpMetrics', () => {
     expect(await getMetrics()).toContain('status_code="500"');
   });
 });
+
+describe('normalizeRoute com identificadores', () => {
+  it('colapsa um uuid no caminho para :id', () => {
+    expect(
+      normalizeRoute('/service-orders/0193f2a1-4c7e-7000-8000-000000000001'),
+    ).toBe('/service-orders/:id');
+  });
+
+  it('colapsa todos os uuids de um caminho aninhado', () => {
+    const path =
+      '/service-orders/0193f2a1-4c7e-7000-8000-000000000001' +
+      '/items/0193f2a1-4c7e-7000-8000-000000000002';
+
+    expect(normalizeRoute(path)).toBe('/service-orders/:id/items/:id');
+  });
+});
