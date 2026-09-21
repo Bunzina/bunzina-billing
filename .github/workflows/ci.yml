@@ -51,8 +51,6 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      # O bunfig.ci.toml tem coverageThreshold de 80%; abaixo disso este passo
-      # falha e o PR não passa. É o gate de cobertura exigido pela Fase 4.
       - name: Run tests with coverage
         run: bun test --config=./bunfig.ci.toml
 
@@ -63,9 +61,6 @@ jobs:
           path: coverage/lcov.info
           retention-days: 1
 
-  # Job separado de propósito. Enquanto o scan morava junto dos testes, uma
-  # falha do SonarCloud — ou a simples ausência do token — reprovava o gate de
-  # cobertura, que não tem nada a ver com isso.
   sonar:
     name: sonar/quality-gate
     runs-on: ubuntu-latest
@@ -83,7 +78,6 @@ jobs:
         if: env.SONAR_TOKEN != ''
         uses: actions/checkout@v4
         with:
-          # O Sonar precisa do histórico para atribuir código novo a um autor.
           fetch-depth: 0
 
       - name: Download coverage

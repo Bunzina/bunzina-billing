@@ -12,7 +12,6 @@ app-chart:
     service:
       type: ClusterIP
       port: 80
-    # Obrigatório: o Mercado Pago precisa alcançar o webhook de confirmação.
     ingress:
       enabled: true
       className: alb
@@ -52,13 +51,9 @@ app-chart:
       PROD_DB_NAME: "bunzina-billing"
       RABBITMQ_EXCHANGE: "bunzina.events"
       RABBITMQ_QUEUE: "bunzina-billing.inbox"
-      # Aponta para o release `bunzina-observability` (namespace `observability`).
-      # Sem essa env var o tracing.ts nem inicializa.
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy-gateway.observability.svc.cluster.local:4318"
       OTEL_SERVICE_NAME: "bunzina-billing"
 
-  # Cada serviço tem o seu banco (ADR 0012). O app-chart sobe o Postgres deste
-  # serviço; o bunzina-workshop desliga isto e usa o MongoDB Atlas (ADR 0014).
   database:
     enabled: true
     name: bunzina-billing-postgres

@@ -38,8 +38,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # O mesmo broker que roda no cluster (ADR 0015). A paridade é o que permite
-  # ensaiar falha e compensação antes de gravar o vídeo.
   rabbitmq:
     image: rabbitmq:3.13-management
     environment:

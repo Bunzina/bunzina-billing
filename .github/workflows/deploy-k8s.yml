@@ -69,8 +69,6 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
 
-      # Cada serviço tem o seu próprio Postgres (ADR 0012). O Service do banco
-      # deste serviço é `bunzina-billing-postgres` no namespace bunzina.
       - name: Run production migrations
         env:
           APP_ENV: prod

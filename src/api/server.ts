@@ -69,8 +69,6 @@ app.get('/metrics', async () => {
   });
 });
 
-// Prontidão: o app-chart usa esta rota como readinessProbe, então ela precisa
-// falhar quando o banco do serviço não responde.
 app.get('/ready', async ({ set }) => {
   try {
     await checkDependencies();

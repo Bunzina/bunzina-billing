@@ -31,8 +31,6 @@ export const httpRequestsInFlight = new Gauge({
   registers: [registry],
 });
 
-// Métricas de mensageria. Alimentam o dashboard da saga no Grafana: volume por
-// tipo de mensagem, falha de consumo e descarte por idempotência.
 export const messagesPublishedTotal = new Counter({
   name: 'bunzina_billing_messages_published_total',
   help: 'Total number of messages published to the broker.',
@@ -62,8 +60,6 @@ const getStatusCode = (status: number | string | undefined): string => {
     : '200';
 };
 
-// Cada serviço acrescenta aqui os seus próprios padrões de rota dinâmica. Sem
-// normalizar, um id por request vira uma série temporal por request.
 const dynamicRoutePatterns: Array<[RegExp, string]> = [];
 
 const UUID_SEGMENT =
@@ -76,9 +72,6 @@ export const normalizeRoute = (pathname: string): string => {
     }
   }
 
-  // Rede de segurança para o que escapar dos padrões acima: um id cru vira um
-  // label novo a cada request, e cardinalidade sem teto derruba o Prometheus
-  // antes de derrubar o serviço.
   return pathname.replace(UUID_SEGMENT, ':id') || '/';
 };
 

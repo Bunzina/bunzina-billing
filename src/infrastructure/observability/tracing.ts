@@ -11,9 +11,6 @@ const tracesEndpoint =
 
 const NON_TRACED_PATHS = new Set(['/metrics', '/health', '/ready']);
 
-// O propagador precisa estar registrado mesmo quando o tracing está desligado:
-// é ele que o publisher e o consumer usam para injetar e extrair o traceparent
-// nos headers AMQP. Sem isso o trace quebra em cada salto por RabbitMQ.
 propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 
 export const tracing: Elysia | null = tracesEndpoint ? build() : null;

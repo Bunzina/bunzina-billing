@@ -6,14 +6,6 @@ import type { Envelope } from './envelope';
 
 const tracer = trace.getTracer('messaging');
 
-/**
- * Publica uma mensagem usando o eventType como routing key.
- *
- * O `traceparent` é injetado nos headers AMQP pelo propagador global: é o que
- * o consumer do outro serviço extrai para continuar o mesmo trace. Sem isso o
- * rastreamento distribuído quebra em cada salto assíncrono, e o requisito de
- * observabilidade da Fase 4 não se sustenta.
- */
 export const publish = async <TData extends Record<string, unknown>>(
   envelope: Envelope<TData>,
   channelOverride?: Channel,
