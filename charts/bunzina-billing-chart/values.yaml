@@ -12,6 +12,7 @@ app-chart:
     service:
       type: ClusterIP
       port: 80
+    # Obrigatório: o Mercado Pago precisa alcançar o webhook de confirmação.
     ingress:
       enabled: true
       className: alb
