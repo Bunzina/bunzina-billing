@@ -12,14 +12,6 @@ const tracer = trace.getTracer('messaging');
 
 export type MessageHandler = (envelope: Envelope) => Promise<void>;
 
-/**
- * Guarda de idempotência. A implementação concreta grava em `processed_events`
- * **na mesma transação** da escrita de negócio e devolve `false` quando a
- * mensagem já foi processada.
- *
- * Sem isso, um redelivery do RabbitMQ cobra o cliente duas vezes — e estornar
- * duas vezes é pior que o problema original.
- */
 export type IdempotencyGuard = (eventId: string) => Promise<boolean>;
 
 type StartInput = {
@@ -46,7 +38,6 @@ export const startConsumer = async ({
       return;
     }
 
-    // Continua o trace do publisher a partir dos headers AMQP.
     const parentContext = propagation.extract(
       context.active(),
       message.properties.headers ?? {},
@@ -83,8 +74,6 @@ export const startConsumer = async ({
           const handler = handlers[envelope.eventType];
 
           if (!handler) {
-            // Ninguém neste serviço trata esta mensagem. Nack sem requeue
-            // manda para a DLQ em vez de girar em laço.
             messagesConsumedTotal.inc({
               event_type: eventType,
               result: 'unhandled',

@@ -23,8 +23,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Enum fechado, igual ao do contrato de eventos. Motivo em texto solto impede
--- agrupar falha por causa no dashboard da saga.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'failure_reason') THEN
     CREATE TYPE bunzina.failure_reason AS ENUM (

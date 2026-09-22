@@ -8,10 +8,6 @@ export const DLQ = `${QUEUE}.dlq`;
 let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 
-/**
- * Canal único por processo. Abrir um canal por mensagem estoura o limite de
- * conexões do broker quando o HPA escala os quatro serviços.
- */
 export const getChannel = async (): Promise<Channel> => {
   if (channel) {
     return channel;
@@ -28,8 +24,6 @@ export const getChannel = async (): Promise<Channel> => {
 
   await assertTopology(channel);
 
-  // Publisher confirms ligado no publisher; aqui limitamos o prefetch para que
-  // um consumer lento não acumule mensagens não confirmadas na memória.
   await channel.prefetch(10);
 
   return channel;

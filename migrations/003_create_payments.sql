@@ -22,8 +22,6 @@ CREATE TABLE IF NOT EXISTS bunzina.payments (
   updated_at          TIMESTAMPTZ            NOT NULL DEFAULT NOW()
 );
 
--- O webhook do Mercado Pago chega pelo id do provedor; é por ele que a
--- confirmação encontra o pagamento.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_provider_payment_id
   ON bunzina.payments(provider, provider_payment_id)
   WHERE provider_payment_id IS NOT NULL;

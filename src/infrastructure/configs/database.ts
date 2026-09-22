@@ -21,9 +21,6 @@ if (appEnv === 'prod') {
     process.env.DATABASE_URL || 'postgres://bun:bun@db:5432/bunzina-billing';
 }
 
-// prepare:false -> compatível com o transaction-mode pooler do Supabase (porta 6543),
-// que multiplexa conexões e não suporta prepared statements nomeados persistentes.
-// max -> limita o pool por pod (evita estourar o limite de conexões do pooler com HPA).
 export const db = new SQL(connectionString, {
   prepare: false,
   max: Number(process.env.DB_POOL_MAX ?? 5),

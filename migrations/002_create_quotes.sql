@@ -1,7 +1,3 @@
--- Dinheiro em centavos inteiros, com moeda explícita. O domínio do monólito
--- usava NUMERIC com decimais, o que funcionava dentro de um processo só;
--- atravessando JSON entre três serviços e o Mercado Pago vira erro de
--- arredondamento. A fronteira é o lugar de corrigir.
 CREATE TABLE IF NOT EXISTS bunzina.quotes (
   id                     UUID                 PRIMARY KEY,
   service_order_id       UUID                 NOT NULL,
@@ -30,9 +26,6 @@ CREATE TABLE IF NOT EXISTS bunzina.quotes (
   updated_at             TIMESTAMPTZ          NOT NULL DEFAULT NOW()
 );
 
--- Um orçamento vigente por ordem de serviço. Sem isso, um redelivery de
--- cmd.billing.issue-quote que escape da idempotência gera dois orçamentos e o
--- cliente aprova o errado.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_quotes_active_per_order
   ON bunzina.quotes(service_order_id)
   WHERE status IN ('ISSUED', 'APPROVED');

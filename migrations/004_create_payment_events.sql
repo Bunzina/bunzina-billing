@@ -1,5 +1,3 @@
--- Trilha de auditoria do que o Mercado Pago mandou, crua. Quando um estorno não
--- fecha e o caso vira problema humano, é isto que se lê.
 CREATE TABLE IF NOT EXISTS bunzina.payment_events (
   id          UUID        PRIMARY KEY,
   payment_id  UUID        REFERENCES bunzina.payments(id) ON DELETE CASCADE,
