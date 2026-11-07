@@ -57,18 +57,28 @@ pacote npm. Enquanto o pacote não existe, ela vive aqui.
 | `envelope.ts` | Schema Zod do envelope e enum de `reason`. Critério de aceite nº 1 do contrato |
 | `connection.ts` | Canal único por processo, topologia (exchange topic, fila, DLX, DLQ) e prefetch |
 | `publisher.ts` | Publica com o `eventType` como routing key e injeta o `traceparent` nos headers AMQP |
-| `consumer.ts` | Extrai o `traceparent`, aplica a guarda de idempotência e faz ack/nack |
+| `consumer.ts` | Extrai o `traceparent`, roda o handler numa transação junto com a guarda de idempotência, repete falhas transitórias (3 tentativas, backoff exponencial) e faz ack/nack |
+| `message-store.ts` | Porta `MessageStore` e a implementação Postgres: transação, `processed_events` e outbox |
+| `outbox-relay.ts` | Publica o outbox por polling de 1s em lotes com `FOR UPDATE SKIP LOCKED`, esperando o confirm do broker |
 
 O contrato completo está em
 [docs/contracts/events-saga-contracts.md](../../docs/contracts/events-saga-contracts.md).
 
 ### O que cada serviço precisa implementar
 
-O `consumer.ts` recebe uma `IdempotencyGuard` — o template não a implementa porque
-ela depende do banco de cada serviço. A regra é a mesma nos quatro: gravar em
-`processed_events` **na mesma transação** da escrita de negócio, e devolver `false`
-quando a mensagem já foi processada. Sem isso, um redelivery do RabbitMQ cobra o
-cliente duas vezes.
+O handler de cada mensagem recebe `{ envelope, tx, emit }`. A guarda de idempotência
+grava em `processed_events` **na mesma transação** da escrita de negócio, e o `emit`
+grava o evento de saída no outbox nessa mesma transação, com o `serviceOrderId` como
+`correlationId` e o `eventId` da mensagem de origem como `causationId`. Um redelivery
+do RabbitMQ é confirmado sem efeito, então não cobra o cliente duas vezes.
+
+Um handler que considera a mensagem inválida lança `InvalidMessageError`: ela vai
+direto para a DLQ, sem retry. Qualquer outro erro é repetido até 3 vezes.
+
+Testes: os unitários usam o `MessageStore` em memória (`src/test`). Os de integração
+(`bun run test:integration`, com `DATABASE_URL` apontando para um Postgres) provam o
+que mock não prova: a transação, o outbox e o `SKIP LOCKED` com duas instâncias. Eles
+rodam no job `test/integration` do CI, fora do gate de 80%.
 
 No Postgres é chave primária composta `(event_id, consumer)`. No MongoDB do
 `bunzina-workshop` é índice único em `{ eventId, consumer }`.

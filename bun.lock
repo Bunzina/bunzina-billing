@@ -19,6 +19,7 @@
         "zod": "^4.3.6",
       },
       "devDependencies": {
+        "@opentelemetry/context-async-hooks": "^2.11.0",
         "@types/amqplib": "^0.10.5",
         "@types/bun": "latest",
         "bun-mock-extended": "^3.0.5",

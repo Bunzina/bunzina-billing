@@ -13,6 +13,7 @@ pathIgnorePatterns = [
   "**/coverage/**",
   "**/src/test/**",
   "**/infrastructure/configs/**",
+  "**/*.integration.test.ts",
 ]
 coveragePathIgnorePatterns = [
   "**/node_modules/**",

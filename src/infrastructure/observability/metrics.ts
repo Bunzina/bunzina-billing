@@ -53,6 +53,12 @@ export const messageHandlingDurationSeconds = new Histogram({
   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
 });
 
+export const outboxPending = new Gauge({
+  name: 'billing_outbox_pending',
+  help: 'Number of outbox events waiting to be published to the broker.',
+  registers: [registry],
+});
+
 const getStatusCode = (status: number | string | undefined): string => {
   const statusCode = Number(status);
   return Number.isInteger(statusCode) && statusCode > 0

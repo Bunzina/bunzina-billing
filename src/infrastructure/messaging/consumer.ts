@@ -6,28 +6,59 @@ import {
   messagesConsumedTotal,
 } from '../observability/metrics';
 import { EXCHANGE, getChannel, QUEUE } from './connection';
-import { type Envelope, parseEnvelope } from './envelope';
+import { buildEnvelope, type Envelope, parseEnvelope } from './envelope';
+import {
+  type MessageStore,
+  postgresMessageStore,
+  type Tx,
+} from './message-store';
 
 const tracer = trace.getTracer('messaging');
 
-export type MessageHandler = (envelope: Envelope) => Promise<void>;
+export class InvalidMessageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidMessageError';
+  }
+}
 
-export type IdempotencyGuard = (eventId: string) => Promise<boolean>;
+export type HandlerContext = {
+  envelope: Envelope;
+  tx: Tx;
+  emit: (eventType: string, data: Record<string, unknown>) => Promise<void>;
+};
+
+export type MessageHandler = (context: HandlerContext) => Promise<void>;
+
+export type RetryPolicy = {
+  maxAttempts: number;
+  baseDelayMs: number;
+  sleep: (ms: number) => Promise<void>;
+};
+
+const defaultRetry: RetryPolicy = {
+  maxAttempts: 3,
+  baseDelayMs: Number(process.env.CONSUMER_RETRY_BASE_MS ?? 200),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
 
 type StartInput = {
   handlers: Record<string, MessageHandler>;
-  isFirstDelivery: IdempotencyGuard;
   bindings: string[];
   channel?: Channel;
+  store?: MessageStore;
+  retry?: Partial<RetryPolicy>;
 };
 
 export const startConsumer = async ({
   handlers,
-  isFirstDelivery,
   bindings,
   channel: channelOverride,
+  store = postgresMessageStore,
+  retry,
 }: StartInput): Promise<void> => {
   const channel = channelOverride ?? (await getChannel());
+  const policy: RetryPolicy = { ...defaultRetry, ...retry };
 
   for (const binding of bindings) {
     await channel.bindQueue(QUEUE, EXCHANGE, binding);
@@ -46,6 +77,42 @@ export const startConsumer = async ({
     await context.with(parentContext, () => handle(message));
   });
 
+  const deadLetter = (
+    message: ConsumeMessage,
+    eventType: string,
+    result: string,
+  ) => {
+    messagesConsumedTotal.inc({ event_type: eventType, result });
+    channel.nack(message, false, false);
+  };
+
+  const processEnvelope = (
+    envelope: Envelope,
+    handler: MessageHandler,
+  ): Promise<'processed' | 'duplicate'> =>
+    store.transact(async (tx) => {
+      if (!(await store.claimEvent(tx, envelope.eventId, QUEUE))) {
+        return 'duplicate';
+      }
+
+      await handler({
+        envelope,
+        tx,
+        emit: (eventType, data) =>
+          store.enqueue(
+            tx,
+            buildEnvelope({
+              eventType,
+              correlationId: envelope.correlationId,
+              causationId: envelope.eventId,
+              data,
+            }),
+          ),
+      });
+
+      return 'processed';
+    });
+
   async function handle(message: ConsumeMessage): Promise<void> {
     const eventType = String(message.properties.type ?? 'unknown');
 
@@ -58,49 +125,69 @@ export const startConsumer = async ({
         });
 
         try {
-          const envelope = parseEnvelope(
-            JSON.parse(message.content.toString()),
-          );
+          let envelope: Envelope;
 
-          if (!(await isFirstDelivery(envelope.eventId))) {
-            messagesConsumedTotal.inc({
-              event_type: eventType,
-              result: 'duplicate',
+          try {
+            envelope = parseEnvelope(JSON.parse(message.content.toString()));
+          } catch (error) {
+            logger.warn({
+              message: 'invalid envelope',
+              eventType,
+              error: error instanceof Error ? error.message : String(error),
             });
-            channel.ack(message);
+            deadLetter(message, eventType, 'invalid');
             return;
           }
 
           const handler = handlers[envelope.eventType];
 
           if (!handler) {
-            messagesConsumedTotal.inc({
-              event_type: eventType,
-              result: 'unhandled',
-            });
-            channel.nack(message, false, false);
+            deadLetter(message, eventType, 'unhandled');
             return;
           }
 
-          await handler(envelope);
+          for (let attempt = 1; ; attempt += 1) {
+            try {
+              const outcome = await processEnvelope(envelope, handler);
 
-          messagesConsumedTotal.inc({
-            event_type: eventType,
-            result: 'success',
-          });
-          channel.ack(message);
-        } catch (error) {
-          logger.error({
-            message: 'failed to handle message',
-            eventType,
-            error: error instanceof Error ? error.message : String(error),
-          });
+              messagesConsumedTotal.inc({
+                event_type: eventType,
+                result: outcome === 'duplicate' ? 'duplicate' : 'success',
+              });
+              channel.ack(message);
+              return;
+            } catch (error) {
+              const reason =
+                error instanceof Error ? error.message : String(error);
 
-          messagesConsumedTotal.inc({
-            event_type: eventType,
-            result: 'failure',
-          });
-          channel.nack(message, false, false);
+              if (error instanceof InvalidMessageError) {
+                logger.warn({
+                  message: 'handler rejected the message',
+                  eventType,
+                  error: reason,
+                });
+                deadLetter(message, eventType, 'invalid');
+                return;
+              }
+
+              if (attempt >= policy.maxAttempts) {
+                logger.error({
+                  message: 'failed to handle message',
+                  eventType,
+                  attempts: attempt,
+                  error: reason,
+                });
+                deadLetter(message, eventType, 'failure');
+                return;
+              }
+
+              messagesConsumedTotal.inc({
+                event_type: eventType,
+                result: 'retry',
+              });
+              await policy.sleep(policy.baseDelayMs * 2 ** (attempt - 1));
+            }
+          }
         } finally {
           stopTimer();
           span.end();

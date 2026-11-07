@@ -6,7 +6,7 @@ const bindQueue = mock(async () => ({}) as never);
 const prefetch = mock(async () => 0);
 const closeChannel = mock(async () => {});
 const closeConnectionMock = mock(async () => {});
-const createChannel = mock(async () => ({
+const createConfirmChannel = mock(async () => ({
   assertExchange,
   assertQueue,
   bindQueue,
@@ -17,7 +17,7 @@ const createChannel = mock(async () => ({
 mock.module('amqplib', () => ({
   default: {
     connect: mock(async () => ({
-      createChannel,
+      createConfirmChannel,
       close: closeConnectionMock,
     })),
   },
@@ -54,6 +54,12 @@ describe('getChannel', () => {
       deadLetterExchange: DLX,
     });
     expect(bindQueue).toHaveBeenCalledWith(DLQ, DLX, '#');
+  });
+
+  it('opens a confirm channel so the relay can wait for the broker to confirm a publish', async () => {
+    await getChannel();
+
+    expect(createConfirmChannel).toHaveBeenCalled();
   });
 
   it('reuses the same channel across calls', async () => {
