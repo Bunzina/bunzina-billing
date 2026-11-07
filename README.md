@@ -78,7 +78,9 @@ direto para a DLQ, sem retry. Qualquer outro erro é repetido até 3 vezes.
 Testes: os unitários usam o `MessageStore` em memória (`src/test`). Os de integração
 (`bun run test:integration`, com `DATABASE_URL` apontando para um Postgres) provam o
 que mock não prova: a transação, o outbox e o `SKIP LOCKED` com duas instâncias. Eles
-rodam no job `test/integration` do CI, fora do gate de 80%.
+rodam no job `test/integration` do CI, fora do gate de 80%. O `lcov` deles segue para o
+SonarCloud junto com o dos unitários, então o SQL do `message-store` conta como coberto
+no quality gate.
 
 No Postgres é chave primária composta `(event_id, consumer)`. No MongoDB do
 `bunzina-workshop` é índice único em `{ eventId, consumer }`.

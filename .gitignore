@@ -6,6 +6,7 @@ dist
 
 # code coverage
 coverage
+coverage-integration
 
 # helm
 charts/**/charts
