@@ -21,4 +21,5 @@ coveragePathIgnorePatterns = [
   "**/migrations/**",
   "**/src/test/**",
   "**/infrastructure/configs/**",
+  "**/infrastructure/messaging/message-store.ts",
 ]

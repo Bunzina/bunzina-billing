@@ -79,8 +79,9 @@ Testes: os unitários usam o `MessageStore` em memória (`src/test`). Os de inte
 (`bun run test:integration`, com `DATABASE_URL` apontando para um Postgres) provam o
 que mock não prova: a transação, o outbox e o `SKIP LOCKED` com duas instâncias. Eles
 rodam no job `test/integration` do CI, fora do gate de 80%. O `lcov` deles segue para o
-SonarCloud junto com o dos unitários, então o SQL do `message-store` conta como coberto
-no quality gate.
+SonarCloud junto com o dos unitários. O `message-store.ts`, que é só SQL, fica fora do
+gate unitário (o Bun mede o limite de 80% por arquivo) e é medido apenas pela
+integração.
 
 No Postgres é chave primária composta `(event_id, consumer)`. No MongoDB do
 `bunzina-workshop` é índice único em `{ eventId, consumer }`.
