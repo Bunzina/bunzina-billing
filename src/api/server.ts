@@ -1,6 +1,16 @@
 import '@/infrastructure/observability/logger-trace';
 
+import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
+import { parseValidityHours } from '@/domain/quote/quote';
 import { db } from '@/infrastructure/configs/database';
+import {
+  DEFAULT_EMAIL,
+  emailTransporter,
+} from '@/infrastructure/configs/email-transporter';
+import { createNodemailerQuoteMailer } from '@/infrastructure/email/nodemailer-quote-mailer';
+import { startConsumer } from '@/infrastructure/messaging/consumer';
+import { postgresQuoteRepository } from '@/infrastructure/persistence/postgres-quote-repository';
+import { quoteRoutes } from './quote-routes';
 import { startRelay } from '@/infrastructure/messaging/outbox-relay';
 import {
   createHttpMetrics,
@@ -52,6 +62,7 @@ app.use(
       },
       tags: [
         { name: 'Health', description: 'Verificação de saúde do serviço' },
+        { name: 'Quotes', description: 'Orçamentos emitidos pelo Billing' },
       ],
     },
     path: '/swagger',
@@ -86,6 +97,10 @@ async function checkDependencies(): Promise<void> {
   await db`SELECT 1`;
 }
 
+const clock = () => new Date();
+
+app.use(quoteRoutes({ quotes: postgresQuoteRepository, clock }));
+
 app.get('/', ({ redirect }) => redirect('/swagger'), {
   detail: { hide: true },
 });
@@ -99,6 +114,27 @@ if (import.meta.main) {
   });
 
   if (process.env.RABBITMQ_URL) {
+    void startConsumer({
+      bindings: ['cmd.billing.*'],
+      handlers: {
+        'cmd.billing.issue-quote': createIssueQuoteHandler({
+          quotes: postgresQuoteRepository,
+          mailer: createNodemailerQuoteMailer({
+            transporter: emailTransporter,
+            from: DEFAULT_EMAIL,
+          }),
+          clock,
+          validityHours: parseValidityHours(process.env.QUOTE_VALIDITY_HOURS),
+        }),
+      },
+    }).catch((error: unknown) => {
+      logger.error({
+        message: 'failed to start the consumer',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      process.exit(1);
+    });
+
     const relay = startRelay();
 
     process.once('SIGTERM', () => {

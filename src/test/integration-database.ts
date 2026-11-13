@@ -20,6 +20,10 @@ export const resetMessagingTables = async (): Promise<void> => {
   await db`TRUNCATE bunzina.outbox_messages, bunzina.processed_events, bunzina.payment_events`;
 };
 
+export const resetQuoteTables = async (): Promise<void> => {
+  await db`TRUNCATE bunzina.payments, bunzina.quotes, bunzina.outbox_messages, bunzina.processed_events CASCADE`;
+};
+
 export const countRows = async (table: string): Promise<number> => {
   const [row] = await db`SELECT count(*)::int AS count FROM ${db(table)}`;
 

@@ -219,4 +219,54 @@ describe('startConsumer', () => {
     expect(database.outboxEvents()).toHaveLength(0);
     expect(nack).toHaveBeenCalled();
   });
+
+  it('runs after-commit work once the transaction has committed', async () => {
+    const order: string[] = [];
+    const handler: MessageHandler = async ({ afterCommit }) => {
+      afterCommit(async () => {
+        order.push('after-commit');
+      });
+      order.push('handler');
+    };
+    await start({ 'cmd.billing.charge': handler });
+
+    await deliver(messageFor('cmd.billing.charge').message);
+
+    expect(order).toEqual(['handler', 'after-commit']);
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips after-commit work for a redelivered message and for a failed attempt', async () => {
+    const work = mock(async () => {});
+    let attempts = 0;
+    const handler: MessageHandler = async ({ afterCommit }) => {
+      afterCommit(work);
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw new Error('transient');
+      }
+    };
+    await start({ 'cmd.billing.charge': handler });
+    const { message } = messageFor('cmd.billing.charge');
+
+    await deliver(message);
+    await deliver(message);
+
+    expect(work).toHaveBeenCalledTimes(1);
+  });
+
+  it('acks the message even when after-commit work fails', async () => {
+    const handler: MessageHandler = async ({ afterCommit }) => {
+      afterCommit(async () => {
+        throw new Error('smtp down');
+      });
+    };
+    await start({ 'cmd.billing.charge': handler });
+
+    await deliver(messageFor('cmd.billing.charge').message);
+
+    expect(ack).toHaveBeenCalledTimes(1);
+    expect(nack).not.toHaveBeenCalled();
+  });
 });
