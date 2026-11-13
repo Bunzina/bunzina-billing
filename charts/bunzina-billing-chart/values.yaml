@@ -55,7 +55,7 @@ app-chart:
       OTEL_SERVICE_NAME: "bunzina-billing"
 
   database:
-    enabled: true
+    enabled: false
     name: bunzina-billing-postgres
     image: postgres:15
     port: 5432
