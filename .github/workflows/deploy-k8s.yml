@@ -163,7 +163,15 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+          EMAIL_SMTP_USER: ${{ secrets.EMAIL_SMTP_USER }}
+          EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
         run: |
+          smtp_auth=()
+          if [ -n "$EMAIL_SMTP_USER" ]; then
+            smtp_auth+=(--set app-chart.app.secret.EMAIL_SMTP_USER="$EMAIL_SMTP_USER")
+            smtp_auth+=(--set app-chart.app.secret.EMAIL_SMTP_PASSWORD="$EMAIL_SMTP_PASSWORD")
+          fi
+
           helm upgrade --install "$HELM_RELEASE" charts/bunzina-billing-chart \
             --namespace "$K8S_NAMESPACE" --create-namespace \
             --set app-chart.app.image.repository="${ECR_REGISTRY}/${ECR_REPOSITORY}" \
@@ -173,6 +181,7 @@ jobs:
             --set app-chart.app.secret.PROD_DB_USER="$DB_USER" \
             --set app-chart.app.secret.PROD_DB_PASSWORD="$DB_PASSWORD" \
             --set app-chart.app.secret.RABBITMQ_URL="$RABBITMQ_URL" \
+            "${smtp_auth[@]}" \
             --wait --timeout 10m
 
       - name: Verify rollout

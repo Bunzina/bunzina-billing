@@ -51,6 +51,10 @@ app-chart:
       PROD_DB_NAME: "bunzina-billing"
       RABBITMQ_EXCHANGE: "bunzina.events"
       RABBITMQ_QUEUE: "bunzina-billing.inbox"
+      QUOTE_VALIDITY_HOURS: "72"
+      EMAIL_SMTP_HOST: "mailcatcher.observability.svc.cluster.local"
+      EMAIL_SMTP_PORT: "1025"
+      EMAIL: "no-reply@bunzina.local"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy-gateway.observability.svc.cluster.local:4318"
       OTEL_SERVICE_NAME: "bunzina-billing"
 

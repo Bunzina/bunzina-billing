@@ -115,6 +115,11 @@ e envia o orçamento ao cliente por e-mail.
 | `EMAIL_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — | Servidor SMTP |
 | `EMAIL` | `bunzina@local.com` | Remetente |
 
+No cluster o host, a porta e o remetente vêm do `values.yaml` (mailcatcher do release
+`bunzina-observability`, sem autenticação). Para um SMTP real, cadastre os secrets
+opcionais `EMAIL_SMTP_USER` e `EMAIL_SMTP_PASSWORD`: o deploy só os injeta quando
+`EMAIL_SMTP_USER` existe.
+
 O SMTP usa TLS implícito só na porta 465; nas demais, STARTTLS quando o servidor oferece.
 
 Métrica: `billing_quotes_total{status}`.
