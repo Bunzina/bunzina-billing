@@ -1,0 +1,63 @@
+{
+  "description": "Notificações reais recebidas por uma order paga. Assinatura: HMAC-SHA256 hex do manifest 'id:<data_id da query>;request-id:<x-request-id>;ts:<ts>;' com a assinatura secreta, comparada com v1. O corpo não traz external_reference: consultar a merchant_order.",
+  "notifications": [
+    {
+      "method": "POST",
+      "query": {
+        "data_id": "46119445524",
+        "type": "topic_merchant_order_wh"
+      },
+      "headers": {
+        "x-signature": "ts=1794608202,v1=3fd154e5ccc7fef65d9c1ac696cb01c1e43274b5cfaef8f21425ba88d848202f",
+        "x-request-id": "12195177-fc55-415a-a716-8318364fa851",
+        "content-type": "application/json",
+        "user-agent": "MercadoPago WebHook v1.0 topic_merchant_order_wh"
+      },
+      "body": {
+        "action": "create",
+        "application_id": "",
+        "data": {
+          "currency_id": "",
+          "marketplace": "NONE",
+          "status": "opened"
+        },
+        "date_created": "2026-11-13T18:16:41.818-04:00",
+        "id": "46119445524",
+        "live_mode": false,
+        "status": "opened",
+        "type": "topic_merchant_order_wh",
+        "user_id": "<COLLECTOR_ID>",
+        "version": 0
+      }
+    },
+    {
+      "method": "POST",
+      "query": {
+        "data_id": "46119445524",
+        "type": "topic_merchant_order_wh"
+      },
+      "headers": {
+        "x-signature": "ts=1794608203,v1=0ae48d53983fa242791d2f658f45427cad4950f4710b3ca2d86e72582eabc2ff",
+        "x-request-id": "3cf623ec-21a0-4014-865b-19d6fdb00d4a",
+        "content-type": "application/json",
+        "user-agent": "MercadoPago WebHook v1.0 topic_merchant_order_wh"
+      },
+      "body": {
+        "action": "update",
+        "application_id": "",
+        "data": {
+          "currency_id": "",
+          "marketplace": "NONE",
+          "status": "closed"
+        },
+        "date_created": "2026-11-13T18:16:41.818-04:00",
+        "id": "46119445524",
+        "live_mode": false,
+        "status": "closed",
+        "type": "topic_merchant_order_wh",
+        "user_id": "<COLLECTOR_ID>",
+        "version": 1
+      }
+    }
+  ]
+}

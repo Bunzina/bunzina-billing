@@ -1,0 +1,31 @@
+{
+  "description": "Estorno integral, corpo vazio. Repetir com a mesma X-Idempotency-Key devolve 201 com o mesmo estorno.",
+  "status": 201,
+  "request": {
+    "method": "POST",
+    "path": "/v1/orders/{order_id}/refund",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>",
+      "Content-Type": "application/json",
+      "X-Idempotency-Key": "<UUID>"
+    },
+    "body": null
+  },
+  "response": {
+    "id": "ORDTST01M7BF98HY7EX9SPPDJQVW7PCC",
+    "status": "refunded",
+    "status_detail": "refunded",
+    "transactions": {
+      "refunds": [
+        {
+          "id": "REF01M7BFB4N870WS92EVWAPDEB5G",
+          "transaction_id": "PAY01M7BFAHESV4W1WVJV6RYD6WR4",
+          "reference_id": "3573709230",
+          "amount": "10.00",
+          "status": "processed",
+          "status_detail": "accredited"
+        }
+      ]
+    }
+  }
+}

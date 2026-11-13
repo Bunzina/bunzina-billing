@@ -1,0 +1,67 @@
+{
+  "description": "Order paga. 'transactions.payments[0].reference_id' é o id do pagamento na API de pagamentos.",
+  "status": 200,
+  "request": {
+    "method": "GET",
+    "path": "/v1/orders/{order_id}",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>"
+    }
+  },
+  "response": {
+    "id": "ORDTST01M7BF98HY7EX9SPPDJQVW7PCC",
+    "type": "online",
+    "processing_mode": "manual",
+    "external_reference": "spike-order-003",
+    "total_amount": "10.00",
+    "total_paid_amount": "10.00",
+    "checkout_url": "https://www.mercadopago.com.br/checkout/v1/redirect?order_id=ORDTST01M7BF98HY7EX9SPPDJQVW7PCC&pref_id=<COLLECTOR_ID>-d413e549-19ae-4b68-90f4-faf9dbe12366",
+    "country_code": "BRA",
+    "user_id": "<COLLECTOR_ID>",
+    "status": "processed",
+    "status_detail": "accredited",
+    "capture_mode": "automatic_async",
+    "currency": "BRL",
+    "created_date": "2026-11-13T22:08:38.99Z",
+    "last_updated_date": "2026-11-13T22:09:20.858Z",
+    "integration_data": {
+      "application_id": "<APPLICATION_ID>"
+    },
+    "config": {
+      "online": {
+        "retries": {
+          "allowed": true,
+          "max_attempts": 20
+        }
+      }
+    },
+    "transactions": {
+      "payments": [
+        {
+          "id": "PAY01M7BFAHESV4W1WVJV6RYD6WR4",
+          "amount": "10",
+          "paid_amount": "10",
+          "taxes_amount": "0",
+          "reference_id": "189509072740",
+          "status": "processed",
+          "status_detail": "accredited",
+          "attempt_number": 1,
+          "payment_method": {
+            "id": "master",
+            "issuer_id": "12749",
+            "type": "credit_card",
+            "installments": 1,
+            "installment_amount": "10"
+          }
+        }
+      ]
+    },
+    "items": [
+      {
+        "title": "Spike Bunzina Orders",
+        "unit_price": "10.00",
+        "quantity": 1
+      }
+    ]
+  }
+}

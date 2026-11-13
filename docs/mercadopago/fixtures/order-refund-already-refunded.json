@@ -1,0 +1,22 @@
+{
+  "description": "Estorno repetido com chave nova.",
+  "status": 409,
+  "request": {
+    "method": "POST",
+    "path": "/v1/orders/{order_id}/refund",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>",
+      "Content-Type": "application/json",
+      "X-Idempotency-Key": "<UUID>"
+    },
+    "body": null
+  },
+  "response": {
+    "errors": [
+      {
+        "code": "order_already_refunded",
+        "message": "the order is already refunded."
+      }
+    ]
+  }
+}
