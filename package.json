@@ -8,6 +8,7 @@
     "start:dev": "bun --hot run src/api/server.ts",
     "test": "bun test",
     "test:ci": "bun test --config=./bunfig.ci.toml",
+    "test:integration": "bun test --config=./bunfig.integration.toml .integration.test.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
@@ -29,6 +30,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@opentelemetry/context-async-hooks": "^2.11.0",
     "@types/amqplib": "^0.10.5",
     "@types/bun": "latest",
     "bun-mock-extended": "^3.0.5",

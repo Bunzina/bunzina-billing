@@ -1,6 +1,7 @@
 import '@/infrastructure/observability/logger-trace';
 
 import { db } from '@/infrastructure/configs/database';
+import { startRelay } from '@/infrastructure/messaging/outbox-relay';
 import {
   createHttpMetrics,
   getMetrics,
@@ -96,4 +97,12 @@ if (import.meta.main) {
       message: 'Server is running on http://localhost:3000/swagger',
     });
   });
+
+  if (process.env.RABBITMQ_URL) {
+    const relay = startRelay();
+
+    process.once('SIGTERM', () => {
+      void relay.stop().then(() => process.exit(0));
+    });
+  }
 }

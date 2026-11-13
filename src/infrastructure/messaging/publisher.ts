@@ -8,7 +8,7 @@ const tracer = trace.getTracer('messaging');
 
 export const publish = async <TData extends Record<string, unknown>>(
   envelope: Envelope<TData>,
-  channelOverride?: Channel,
+  channelOverride?: Pick<Channel, 'publish'>,
 ): Promise<void> => {
   const channel = channelOverride ?? (await getChannel());
 
