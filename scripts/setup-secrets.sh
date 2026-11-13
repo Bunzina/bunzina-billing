@@ -225,58 +225,73 @@ stage_preflight() {
   pause
 }
 
+# Secrets que vivem na organização Bunzina e valem para todos os repositórios.
+# O wizard nunca grava estes nomes no repositório: um secret do repositório com
+# o mesmo nome sobrescreve o da org e deixa de acompanhar a renovação.
+ORG_SECRETS=(AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_ACCOUNT_ID DB_PASSWORD)
+ORG_SECRETS_URL="https://github.com/organizations/Bunzina/settings/secrets/actions"
+
+check_org_secrets() {
+  local visible repo_level name
+  local -a missing=() shadowing=()
+
+  if ! visible=$(gh api "repos/$REPO/actions/organization-secrets" --paginate --jq '.secrets[].name' 2>/dev/null); then
+    SKIPPED+=("conferir se os secrets da org chegam em $REPO (a API recusou a consulta)")
+    warn "Não consegui consultar os secrets da org visíveis para $REPO."
+    return
+  fi
+  repo_level=$(gh secret list --json name --jq '.[].name' 2>/dev/null || true)
+
+  for name in "${ORG_SECRETS[@]}"; do
+    grep -qx "$name" <<<"$visible" || missing+=("$name")
+    grep -qx "$name" <<<"$repo_level" && shadowing+=("$name")
+  done
+
+  if (( ${#missing[@]} )); then
+    SKIPPED+=("secrets da org não visíveis para $REPO: ${missing[*]} (ajuste o acesso do repositório em $ORG_SECRETS_URL)")
+    warn "Faltam na org ou não estão liberados para $REPO: ${missing[*]}"
+  else
+    say "Da org e visíveis para $REPO: ${ORG_SECRETS[*]}"
+  fi
+  if (( ${#shadowing[@]} )); then
+    SKIPPED+=("remover duplicatas locais que sobrescrevem a org: ${shadowing[*]} (gh secret delete NOME)")
+    warn "Duplicados no repositório, sobrescrevendo a org: ${shadowing[*]}"
+  fi
+}
+
+stage_org_secrets() {
+  stage "Secrets compartilhados da organização"
+  say "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_ACCOUNT_ID e DB_PASSWORD"
+  say "ficam na org Bunzina. Este wizard só confere; não grava nenhum deles em $REPO."
+  say "Para renovar as credenciais do AWS Academy depois: ./scripts/setup-secrets.sh --aws"
+  check_org_secrets
+  pause
+}
+
 stage_aws() {
-  stage "AWS Academy: credenciais temporárias"
-  say "Elas expiram quando o Learner Lab é encerrado."
-  say "Para renovar só esta etapa depois: ./scripts/setup-secrets.sh --aws"
+  stage "AWS Academy: renovar credenciais da organização"
+  say "Elas expiram quando o Learner Lab é encerrado e valem para todos os repositórios."
   open_url "https://www.awsacademy.com/vforcesite/LMS_Login"
   step "Entre no curso → Learner Lab → Start Lab e espere o indicador ficar verde."
   step "Clique em 'AWS Details' e, ao lado de 'AWS CLI', em 'Show'."
   note "A interface do Academy muda. Procure o bloco com aws_access_key_id, aws_secret_access_key e aws_session_token."
-  ask AWS_ACCESS_KEY_ID "Cole o aws_access_key_id:"
-  ask_secret AWS_SECRET_ACCESS_KEY "Cole o aws_secret_access_key:"
-  ask_secret AWS_SESSION_TOKEN "Cole o aws_session_token:"
-  require "aws_access_key_id" "$AWS_ACCESS_KEY_ID"
-  require "aws_secret_access_key" "$AWS_SECRET_ACCESS_KEY"
-  require "aws_session_token" "$AWS_SESSION_TOKEN"
-
-  local account=""
-  if command -v aws >/dev/null 2>&1; then
-    account=$(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-      AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-      AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
-      aws sts get-caller-identity --query Account --output text 2>/dev/null || true)
-  fi
-  if [[ "$account" =~ ^[0-9]{12}$ ]]; then
-    AWS_ACCOUNT_ID="$account"
-    say "Conta AWS detectada pelas credenciais: $AWS_ACCOUNT_ID"
-  else
-    warn "Não deu para detectar a conta (aws CLI ausente ou credencial inválida)."
-    ask AWS_ACCOUNT_ID "Cole o ID da conta (12 dígitos, no topo de 'AWS Details'):"
-  fi
-  require "ID da conta" "$AWS_ACCOUNT_ID"
-
-  set_secret AWS_ACCESS_KEY_ID "$AWS_ACCESS_KEY_ID"
-  set_secret AWS_SECRET_ACCESS_KEY "$AWS_SECRET_ACCESS_KEY"
-  set_secret AWS_SESSION_TOKEN "$AWS_SESSION_TOKEN"
-  set_secret AWS_ACCOUNT_ID "$AWS_ACCOUNT_ID"
+  open_url "$ORG_SECRETS_URL"
+  step "Atualize AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY e AWS_SESSION_TOKEN (Update secret)."
+  step "AWS_ACCOUNT_ID só muda se o Learner Lab for outro."
+  note "O wizard não grava estes valores: o gh só atualiza secret de org com permissão de admin e redefiniria a visibilidade."
+  pause "Atualizou na org?"
+  check_org_secrets
 }
 
 stage_database() {
   stage "Banco do Billing (Postgres no cluster)"
-  say "Usuário e senha com que o chart cria o Postgres do serviço e com que a migration conecta."
-  warn "Depois do primeiro deploy, trocar a senha aqui não troca a senha dentro do volume do Postgres."
+  say "Usuário com que o chart cria o Postgres do serviço e com que a migration conecta."
+  say "A senha é a DB_PASSWORD da org: não é pedida nem gravada aqui."
+  warn "Depois do primeiro deploy, trocar a senha não troca a senha dentro do volume do Postgres."
   ask DB_USER "Usuário do banco (ex.: bunzina_billing):"
-  ask_secret DB_PASSWORD "Senha do banco (Enter gera uma aleatória):"
   require "Usuário do banco" "$DB_USER"
-  if [[ -z "$DB_PASSWORD" ]]; then
-    DB_PASSWORD=$(openssl rand -hex 16)
-    say "Senha aleatória gerada."
-  fi
   write_env DB_USER "$DB_USER"
-  write_env DB_PASSWORD "$DB_PASSWORD"
   set_secret DB_USER "$DB_USER"
-  set_secret DB_PASSWORD "$DB_PASSWORD"
   note "O .env local fica só como cópia sua. O app não lê DB_USER nem DB_PASSWORD."
 }
 
@@ -389,7 +404,7 @@ stage_branch_protection() {
 
 if [[ "${1:-}" == "--aws" ]]; then
   TOTAL_STAGES=2
-  banner "Billing: renovar credenciais da AWS"
+  banner "Billing: renovar credenciais da AWS (org)"
   stage_preflight
   stage_aws
   finish
@@ -401,7 +416,7 @@ TOTAL_STAGES=9
 banner "Billing: secrets e configuração do repositório"
 
 stage_preflight
-stage_aws
+stage_org_secrets
 stage_database
 stage_rabbitmq
 stage_mp_token
