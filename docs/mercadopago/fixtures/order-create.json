@@ -24,9 +24,7 @@
       ],
       "config": {
         "payment_method": {
-          "not_allowed_types": [
-            "ticket"
-          ]
+          "not_allowed_types": ["ticket"]
         }
       }
     }
@@ -51,9 +49,7 @@
     },
     "config": {
       "payment_method": {
-        "not_allowed_types": [
-          "ticket"
-        ]
+        "not_allowed_types": ["ticket"]
       }
     },
     "items": [
