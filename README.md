@@ -119,6 +119,11 @@ O SMTP usa TLS implícito só na porta 465; nas demais, STARTTLS quando o servid
 
 Métrica: `billing_quotes_total{status}`.
 
+Alerta: o chart publica `templates/grafana-alerts.yaml`, um ConfigMap com o label
+`grafana_alert: "1"` que dispara quando alguma mensagem vai para a DLQ
+(`bunzina_billing_messages_consumed_total{result=~"invalid|failure|unhandled"}`). Ele só
+chega ao Grafana se o release `bunzina-observability` tiver `grafana.sidecar.alerts.enabled`.
+
 ## Checklist do repositório novo
 
 - [ ] Criar `Bunzina/<serviço>` e exigir PR na `main`
