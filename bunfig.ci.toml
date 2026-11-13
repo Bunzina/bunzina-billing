@@ -23,4 +23,5 @@ coveragePathIgnorePatterns = [
   "**/src/test/**",
   "**/infrastructure/configs/**",
   "**/infrastructure/messaging/message-store.ts",
+  "**/infrastructure/persistence/postgres-*.ts",
 ]

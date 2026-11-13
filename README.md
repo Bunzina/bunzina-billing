@@ -89,6 +89,36 @@ No Postgres é chave primária composta `(event_id, consumer)`. No MongoDB do
 O `/ready` do `server.ts` também fica em aberto: cada serviço troca o
 `checkDependencies` pela checagem do seu próprio banco.
 
+## Emissão do orçamento
+
+O orquestrador manda `cmd.billing.issue-quote` com os itens diagnosticados. O Billing
+calcula o total (serviços + peças, `quantidade × preço unitário`, em centavos), fixa os
+itens e a validade, grava o **Orçamento**, publica `evt.billing.quote-issued` pelo outbox
+e envia o orçamento ao cliente por e-mail.
+
+- **Um orçamento ativo por OS.** Emitido ou aprovado conta como ativo. Um comando novo
+  para uma OS que já tem orçamento ativo não cria outro: reemite `quote-issued` do
+  existente. Depois de uma recusa a OS pode receber um novo. O índice único parcial
+  `uq_quotes_active_per_order` garante isso também com duas réplicas concorrentes.
+- **Payload inválido** (sem itens, total zero, campo faltando ou moeda que não seja um código de 3 letras maiúsculas)
+  vai direto para a DLQ, sem retry.
+- **E-mail depois do commit.** O envio roda só quando a transação confirmou e nunca para
+  uma mensagem repetida. Falha de SMTP gera log e `billing_email_failures_total`, e não
+  impede a emissão. Para isso o handler recebe `afterCommit(work)` além de `tx` e `emit`.
+- **Consulta**: `GET /quotes/:id` com o documento no header `X-Customer-Document`
+  devolve itens, totais e situação. Documento divergente, ausente ou id inválido
+  respondem 404. Um orçamento emitido e vencido aparece como `EXPIRED`.
+
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `QUOTE_VALIDITY_HOURS` | `72` | Validade do orçamento; vazio ou inválido volta para 72 |
+| `EMAIL_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — | Servidor SMTP |
+| `EMAIL` | `bunzina@local.com` | Remetente |
+
+O SMTP usa TLS implícito só na porta 465; nas demais, STARTTLS quando o servidor oferece.
+
+Métrica: `billing_quotes_total{status}`.
+
 ## Checklist do repositório novo
 
 - [ ] Criar `Bunzina/<serviço>` e exigir PR na `main`

@@ -15,6 +15,12 @@ services:
       - RABBITMQ_EXCHANGE=bunzina.events
       - RABBITMQ_QUEUE=bunzina-billing.inbox
       - OTEL_SERVICE_NAME=bunzina-billing
+      - QUOTE_VALIDITY_HOURS=72
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+      - EMAIL_SMTP_USER=${EMAIL_SMTP_USER:-}
+      - EMAIL_SMTP_PASSWORD=${EMAIL_SMTP_PASSWORD:-}
+      - EMAIL=${EMAIL:-bunzina@local.com}
     depends_on:
       db:
         condition: service_healthy

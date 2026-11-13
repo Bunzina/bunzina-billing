@@ -22,9 +22,12 @@ export class InvalidMessageError extends Error {
   }
 }
 
+export type AfterCommitWork = () => Promise<void>;
+
 export type HandlerContext = {
   envelope: Envelope;
   tx: Tx;
+  afterCommit: (work: AfterCommitWork) => void;
   emit: (eventType: string, data: Record<string, unknown>) => Promise<void>;
 };
 
@@ -86,18 +89,45 @@ export const startConsumer = async ({
     channel.nack(message, false, false);
   };
 
+  type Processed = {
+    outcome: 'processed' | 'duplicate';
+    afterCommit: AfterCommitWork[];
+  };
+
+  const runAfterCommit = async (
+    work: AfterCommitWork[],
+    eventType: string,
+  ): Promise<void> => {
+    for (const run of work) {
+      try {
+        await run();
+      } catch (error) {
+        logger.error({
+          message: 'after-commit work failed',
+          eventType,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
   const processEnvelope = (
     envelope: Envelope,
     handler: MessageHandler,
-  ): Promise<'processed' | 'duplicate'> =>
+  ): Promise<Processed> =>
     store.transact(async (tx) => {
+      const afterCommit: AfterCommitWork[] = [];
+
       if (!(await store.claimEvent(tx, envelope.eventId, QUEUE))) {
-        return 'duplicate';
+        return { outcome: 'duplicate', afterCommit };
       }
 
       await handler({
         envelope,
         tx,
+        afterCommit: (work) => {
+          afterCommit.push(work);
+        },
         emit: (eventType, data) =>
           store.enqueue(
             tx,
@@ -110,7 +140,7 @@ export const startConsumer = async ({
           ),
       });
 
-      return 'processed';
+      return { outcome: 'processed', afterCommit };
     });
 
   async function handle(message: ConsumeMessage): Promise<void> {
@@ -148,13 +178,17 @@ export const startConsumer = async ({
 
           for (let attempt = 1; ; attempt += 1) {
             try {
-              const outcome = await processEnvelope(envelope, handler);
+              const { outcome, afterCommit } = await processEnvelope(
+                envelope,
+                handler,
+              );
 
               messagesConsumedTotal.inc({
                 event_type: eventType,
                 result: outcome === 'duplicate' ? 'duplicate' : 'success',
               });
               channel.ack(message);
+              await runAfterCommit(afterCommit, eventType);
               return;
             } catch (error) {
               const reason =

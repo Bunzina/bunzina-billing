@@ -59,6 +59,20 @@ export const outboxPending = new Gauge({
   registers: [registry],
 });
 
+export const quotesTotal = new Counter({
+  name: 'billing_quotes_total',
+  help: 'Total number of quotes, by the status they reached.',
+  labelNames: ['status'],
+  registers: [registry],
+});
+
+export const emailFailuresTotal = new Counter({
+  name: 'billing_email_failures_total',
+  help: 'Total number of emails that could not be sent, by template.',
+  labelNames: ['template'],
+  registers: [registry],
+});
+
 const getStatusCode = (status: number | string | undefined): string => {
   const statusCode = Number(status);
   return Number.isInteger(statusCode) && statusCode > 0
