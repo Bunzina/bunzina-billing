@@ -1,6 +1,6 @@
 # `payment-failed` é terminal e pagamento tardio é estornado automaticamente
 
-No Checkout Pro, um cartão recusado não encerra o checkout: o cliente pode tentar outro meio na mesma preferência. Por isso o Billing só publica `evt.billing.payment-failed` em dois casos, expiração da preferência (`EXPIRED`) e erro do provedor (`PROVIDER_ERROR`). Tentativa recusada fica registrada em `payment_events` e não afeta a saga. Um orçamento tem no máximo um pagamento, e `payment-failed` leva a OS ao cancelamento, sem nova cobrança.
+No Checkout Pro, um cartão recusado não encerra o checkout: o cliente pode tentar outro meio na mesma order (a API de Orders, ADR 0002, substitui a preferência). Por isso o Billing só publica `evt.billing.payment-failed` em dois casos, expiração da order (`EXPIRED`) e erro do provedor (`PROVIDER_ERROR`). Tentativa recusada fica registrada em `payment_events` e não afeta a saga. Um orçamento tem no máximo um pagamento, e `payment-failed` leva a OS ao cancelamento, sem nova cobrança.
 
 Se uma aprovação chegar para um pagamento que já não está `PENDING` (por `cancel-quote`, timeout ou expiração), o Billing estorna sozinho, registra em `payment_events`, incrementa `billing_late_payments_refunded_total` e não publica evento de saga, porque a OS já foi encerrada.
 

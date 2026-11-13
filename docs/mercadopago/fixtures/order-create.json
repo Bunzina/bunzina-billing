@@ -1,0 +1,67 @@
+{
+  "description": "Criação da order do Checkout Pro. 'config.payment_method.not_allowed_types' é o schema aceito; 'excluded_payment_types' (estilo preferência) devolve 400 unsupported_properties. O link do checkout é 'checkout_url'.",
+  "status": 201,
+  "request": {
+    "method": "POST",
+    "path": "/v1/orders",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>",
+      "Content-Type": "application/json",
+      "X-Idempotency-Key": "<UUID>"
+    },
+    "body": {
+      "type": "online",
+      "processing_mode": "manual",
+      "total_amount": "10.00",
+      "external_reference": "<payment-id>",
+      "expiration_time": "PT30M",
+      "items": [
+        {
+          "title": "Spike A",
+          "unit_price": "10.00",
+          "quantity": 1
+        }
+      ],
+      "config": {
+        "payment_method": {
+          "not_allowed_types": [
+            "ticket"
+          ]
+        }
+      }
+    }
+  },
+  "response": {
+    "id": "ORDTST01M7BFJT00JKPQ07F0JQ5V4G64",
+    "type": "online",
+    "processing_mode": "manual",
+    "external_reference": "spike-order-004",
+    "total_amount": "10.00",
+    "checkout_url": "https://www.mercadopago.com.br/checkout/v1/redirect?order_id=ORDTST01M7BFJT00JKPQ07F0JQ5V4G64&pref_id=<COLLECTOR_ID>-125a6837-4584-4e4c-9767-f0b6d37b933b",
+    "expiration_time": "PT30M",
+    "country_code": "BRA",
+    "user_id": "<COLLECTOR_ID>",
+    "status": "created",
+    "capture_mode": "automatic_async",
+    "currency": "BRL",
+    "created_date": "2026-11-13T22:13:51.763Z",
+    "last_updated_date": "2026-11-13T22:13:51.763Z",
+    "integration_data": {
+      "application_id": "<APPLICATION_ID>"
+    },
+    "config": {
+      "payment_method": {
+        "not_allowed_types": [
+          "ticket"
+        ]
+      }
+    },
+    "items": [
+      {
+        "title": "Spike A",
+        "unit_price": "10.00",
+        "quantity": 1
+      }
+    ]
+  }
+}
