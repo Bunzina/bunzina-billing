@@ -1,0 +1,20 @@
+{
+  "description": "Cancelamento repetido com chave nova.",
+  "status": 409,
+  "request": {
+    "method": "POST",
+    "path": "/v1/orders/{order_id}/cancel",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>",
+      "X-Idempotency-Key": "<UUID>"
+    }
+  },
+  "response": {
+    "errors": [
+      {
+        "code": "order_already_canceled",
+        "message": "the order is already canceled."
+      }
+    ]
+  }
+}
