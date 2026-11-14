@@ -1,4 +1,4 @@
-FROM oven/bun:1.2 AS base
+FROM oven/bun:1.4.4 AS base
 
 WORKDIR /app
 ENV NODE_ENV=production
