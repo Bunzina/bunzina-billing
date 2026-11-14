@@ -73,3 +73,6 @@ app-chart:
       limits:
         cpu: "500m"
         memory: "512Mi"
+
+grafanaAlerts:
+  enabled: true

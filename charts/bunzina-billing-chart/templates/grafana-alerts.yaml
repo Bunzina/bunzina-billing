@@ -1,0 +1,55 @@
+{{- if .Values.grafanaAlerts.enabled }}
+# Alerta do billing como código. O sidecar de alertas do Grafana
+# (grafana.sidecar.alerts, label `grafana_alert: "1"`) importa este ConfigMap de
+# qualquer namespace; o roteamento para o e-mail vem da política padrão da
+# release bunzina-observability.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-grafana-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_alert: "1"
+    app.kubernetes.io/part-of: bunzina-billing
+data:
+  bunzina-billing-alerts.yaml: |
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: bunzina-billing
+        folder: Bunzina Billing
+        interval: 1m
+        rules:
+          - uid: billing-dlq-messages
+            title: Billing message sent to the DLQ
+            condition: B
+            data:
+              - refId: A
+                datasourceUid: prometheus
+                relativeTimeRange:
+                  from: 300
+                  to: 0
+                model:
+                  refId: A
+                  instant: true
+                  expr: >-
+                    sum(increase(bunzina_billing_messages_consumed_total{result=~"invalid|failure|unhandled"}[5m]))
+              - refId: B
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params: [0]
+            for: 0s
+            noDataState: OK
+            execErrState: Alerting
+            labels:
+              severity: critical
+            annotations:
+              summary: Billing dead-lettered a message
+              description: At least one message went to bunzina-billing.inbox.dlq in the last 5 minutes (invalid, unhandled or failed after retries). Inspect the DLQ.
+{{- end }}
