@@ -114,11 +114,18 @@ e envia o orçamento ao cliente por e-mail.
 | `QUOTE_VALIDITY_HOURS` | `72` | Validade do orçamento; vazio ou inválido volta para 72 |
 | `EMAIL_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — | Servidor SMTP |
 | `EMAIL` | `bunzina@local.com` | Remetente |
+| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret) |
+| `MP_WEBHOOK_SECRET` | — | Segredo de assinatura do webhook do Mercado Pago (secret) |
+| `PUBLIC_BASE_URL` | — | Endereço público do ALB, base das URLs que o Mercado Pago chama |
 
 No cluster o host, a porta e o remetente vêm do `values.yaml` (mailcatcher do release
 `bunzina-observability`, sem autenticação). Para um SMTP real, cadastre os secrets
 opcionais `EMAIL_SMTP_USER` e `EMAIL_SMTP_PASSWORD`: o deploy só os injeta quando
 `EMAIL_SMTP_USER` existe.
+
+`MP_ACCESS_TOKEN` e `MP_WEBHOOK_SECRET` são secrets do repositório e `PUBLIC_BASE_URL` é uma
+variável (`vars`), porque o endereço do ALB só existe depois do primeiro deploy. O
+deploy só injeta cada um quando está preenchido.
 
 O SMTP usa TLS implícito só na porta 465; nas demais, STARTTLS quando o servidor oferece.
 

@@ -165,11 +165,25 @@ jobs:
           RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
           EMAIL_SMTP_USER: ${{ secrets.EMAIL_SMTP_USER }}
           EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+          MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
+          MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
         run: |
           smtp_auth=()
           if [ -n "$EMAIL_SMTP_USER" ]; then
             smtp_auth+=(--set app-chart.app.secret.EMAIL_SMTP_USER="$EMAIL_SMTP_USER")
             smtp_auth+=(--set app-chart.app.secret.EMAIL_SMTP_PASSWORD="$EMAIL_SMTP_PASSWORD")
+          fi
+
+          mercadopago=()
+          if [ -n "$MP_ACCESS_TOKEN" ]; then
+            mercadopago+=(--set-string app-chart.app.secret.MP_ACCESS_TOKEN="$MP_ACCESS_TOKEN")
+          fi
+          if [ -n "$MP_WEBHOOK_SECRET" ]; then
+            mercadopago+=(--set-string app-chart.app.secret.MP_WEBHOOK_SECRET="$MP_WEBHOOK_SECRET")
+          fi
+          if [ -n "$PUBLIC_BASE_URL" ]; then
+            mercadopago+=(--set-string app-chart.app.config.PUBLIC_BASE_URL="$PUBLIC_BASE_URL")
           fi
 
           helm upgrade --install "$HELM_RELEASE" charts/bunzina-billing-chart \
@@ -182,6 +196,7 @@ jobs:
             --set app-chart.app.secret.PROD_DB_PASSWORD="$DB_PASSWORD" \
             --set app-chart.app.secret.RABBITMQ_URL="$RABBITMQ_URL" \
             "${smtp_auth[@]}" \
+            "${mercadopago[@]}" \
             --wait --timeout 10m
 
       - name: Verify rollout
