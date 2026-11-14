@@ -47,7 +47,7 @@ export const createCancelQuoteHandler =
       return;
     }
 
-    if (quote.status !== 'ISSUED' && quote.status !== 'APPROVED') {
+    if (quote.status === 'REJECTED') {
       throw new InvalidMessageError(
         `a ${quote.status} quote cannot be canceled`,
       );

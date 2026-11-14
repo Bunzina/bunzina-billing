@@ -67,7 +67,7 @@ beforeEach(async () => {
 });
 
 describe('cmd.billing.cancel-quote', () => {
-  it.each(['ISSUED', 'APPROVED'] as const)(
+  it.each(['ISSUED', 'APPROVED', 'EXPIRED'] as const)(
     'cancels a %s quote and publishes quote-canceled',
     async (status) => {
       quotes.save({ ...quote, status });
@@ -146,7 +146,7 @@ describe('cmd.billing.cancel-quote', () => {
     expect(database.outboxEvents()).toHaveLength(0);
   });
 
-  it.each(['REJECTED', 'EXPIRED'] as const)(
+  it.each(['REJECTED'] as const)(
     'sends the command to the DLQ for a %s quote, which there is nothing to cancel',
     async (status) => {
       quotes.save({ ...quote, status });
