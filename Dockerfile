@@ -1,4 +1,4 @@
-FROM oven/bun:1.2 AS base
+FROM oven/bun:1.4.4 AS base
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -10,8 +10,8 @@ RUN bun install --frozen-lockfile --production
 
 FROM base AS runner
 
-RUN addgroup --system app \
-	&& adduser --system --ingroup app app
+RUN groupadd --system app \
+	&& useradd --system --gid app app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --chown=app:app package.json bunfig.toml tsconfig.json ./
