@@ -298,12 +298,13 @@ stage_mp_token() {
   stage "Mercado Pago: access token de teste"
   open_url "https://www.mercadopago.com.br/developers/panel/app"
   step "Abra a aplicação de teste → Credenciais de teste."
-  step "Copie o Access Token. No ambiente de teste ele começa com TEST-."
+  step "Copie o Access Token."
+  note "O prefixo não distingue teste de produção: ele começa com APP_USR nos dois casos."
+  note "Para conferir, rode: curl -s -H \"Authorization: Bearer \$TOKEN\" https://api.mercadopago.com/users/me e procure test_user em tags."
   ask_secret MP_ACCESS_TOKEN "Cole o access token:"
   require "access token" "$MP_ACCESS_TOKEN"
-  if [[ "$MP_ACCESS_TOKEN" != TEST-* ]]; then
-    warn "Esse token não começa com TEST-. Com token de produção as cobranças são reais."
-    confirm "Usar mesmo assim?" || exit 1
+  if ! confirm "Confirmei que a conta desse token é de teste (tag test_user). Continuar?"; then
+    exit 1
   fi
   write_env MP_ACCESS_TOKEN "$MP_ACCESS_TOKEN"
   set_secret MP_ACCESS_TOKEN "$MP_ACCESS_TOKEN"
@@ -314,8 +315,9 @@ stage_mp_webhook() {
   say "Valida o header x-signature das notificações. O painel só a mostra depois de salvar uma URL de webhook."
   open_url "https://www.mercadopago.com.br/developers/panel/app"
   step "Abra a aplicação → Webhooks → Configurar notificações → modo de teste."
-  step "Informe uma URL https provisória (ex.: https://example.com/webhooks/mercadopago)."
-  step "Marque o evento Payments e salve."
+  step "Informe uma URL provisória (ex.: https://example.com/webhooks/mercadopago). O Mercado Pago também entrega em http://."
+  step "Marque os eventos Orders, Payments e Merchant Order e salve."
+  note "No spike só chegaram notificações de Merchant Order. O Billing consulta a API de qualquer jeito, então o evento exato importa menos que a assinatura."
   step "Revele e copie a assinatura secreta."
   note "Depois do primeiro deploy, volte aqui e troque a URL provisória pela URL pública do Billing."
   note "A interface do painel muda. Se não achar, deixe em branco e preencha depois."

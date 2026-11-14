@@ -1,0 +1,38 @@
+{
+  "description": "Cancelamento de order ainda não paga.",
+  "status": 200,
+  "request": {
+    "method": "POST",
+    "path": "/v1/orders/{order_id}/cancel",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>",
+      "X-Idempotency-Key": "<UUID>"
+    }
+  },
+  "response": {
+    "id": "ORDTST01M7BFK5E8HW7X1G3A6MEWAXHW",
+    "type": "online",
+    "processing_mode": "manual",
+    "external_reference": "spike-order-cancel",
+    "total_amount": "10.00",
+    "checkout_url": "https://www.mercadopago.com.br/checkout/v1/redirect?order_id=ORDTST01M7BFK5E8HW7X1G3A6MEWAXHW&pref_id=<COLLECTOR_ID>-0810be6c-662d-4593-8aca-61afe87d0ad4",
+    "country_code": "BRA",
+    "user_id": "<COLLECTOR_ID>",
+    "status": "canceled",
+    "status_detail": "canceled",
+    "capture_mode": "automatic_async",
+    "currency": "BRL",
+    "created_date": "2026-11-13T22:14:03.48Z",
+    "last_updated_date": "2026-11-13T22:14:04.251Z",
+    "integration_data": {
+      "application_id": "<APPLICATION_ID>"
+    },
+    "items": [
+      {
+        "title": "Spike C",
+        "unit_price": "10.00",
+        "quantity": 1
+      }
+    ]
+  }
+}

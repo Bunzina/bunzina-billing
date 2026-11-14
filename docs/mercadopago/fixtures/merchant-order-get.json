@@ -1,0 +1,71 @@
+{
+  "description": "Consulta da merchant_order citada na notificação. 'external_reference' é o da order e 'payments[].id' é o reference_id do pagamento.",
+  "status": 200,
+  "request": {
+    "method": "GET",
+    "path": "/merchant_orders/{id}",
+    "headers": {
+      "Authorization": "Bearer <ACCESS_TOKEN>"
+    }
+  },
+  "response": {
+    "id": 46119445524,
+    "status": "closed",
+    "external_reference": "spike-order-004",
+    "preference_id": "<COLLECTOR_ID>-125a6837-4584-4e4c-9767-f0b6d37b933b",
+    "payments": [
+      {
+        "id": 189510864460,
+        "transaction_amount": 10,
+        "total_paid_amount": 10,
+        "shipping_cost": 0,
+        "currency_id": "BRL",
+        "status": "approved",
+        "status_detail": "accredited",
+        "operation_type": "regular_payment",
+        "date_approved": "2026-11-13T18:16:42.000-04:00",
+        "date_created": "2026-11-13T18:16:42.000-04:00",
+        "last_modified": "2026-11-13T18:16:42.000-04:00",
+        "amount_refunded": 0
+      }
+    ],
+    "shipments": [],
+    "payouts": [],
+    "collector": {
+      "id": "<COLLECTOR_ID>",
+      "email": "",
+      "nickname": "TESTUSER2836811902517778116"
+    },
+    "marketplace": "NONE",
+    "notification_url": null,
+    "date_created": "2026-11-13T18:16:41.818-04:00",
+    "last_updated": "2026-11-13T18:16:42.752-04:00",
+    "sponsor_id": null,
+    "shipping_cost": 0,
+    "total_amount": 10,
+    "site_id": "MLB",
+    "paid_amount": 10,
+    "refunded_amount": 0,
+    "payer": {
+      "id": 3821189843,
+      "email": ""
+    },
+    "items": [
+      {
+        "id": "",
+        "category_id": "",
+        "currency_id": "BRL",
+        "description": "",
+        "picture_url": null,
+        "title": "Spike A",
+        "quantity": 1,
+        "unit_price": 10
+      }
+    ],
+    "cancelled": false,
+    "additional_info": "",
+    "application_id": null,
+    "is_test": true,
+    "order_status": "paid"
+  }
+}
