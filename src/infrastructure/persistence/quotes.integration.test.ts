@@ -1,6 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
-import { issueQuote } from '@/domain/quote/quote';
+import {
+  approveQuote,
+  cancelQuote,
+  issueQuote,
+  rejectQuote,
+} from '@/domain/quote/quote';
 import {
   startConsumer,
   type MessageHandler,
@@ -15,6 +20,7 @@ import {
   resetQuoteTables,
 } from '@/test/integration-database';
 import { createFakeMailer } from '@/test/fake-mailer';
+import { postgresPaymentReader } from './postgres-payment-reader';
 import { postgresQuoteRepository } from './postgres-quote-repository';
 
 const NOW = new Date('2026-09-17T14:03:22.115Z');
@@ -191,6 +197,82 @@ describe.skipIf(!hasIntegrationDatabase)('quotes against Postgres', () => {
     );
 
     expect(await countRows('bunzina.quotes')).toBe(2);
+  });
+
+  it('persists each decision and reads it back, locking the row inside the transaction', async () => {
+    const approved = newQuote(crypto.randomUUID());
+    const rejected = newQuote(crypto.randomUUID());
+    const canceled = newQuote(crypto.randomUUID());
+
+    for (const quote of [approved, rejected, canceled]) {
+      await postgresMessageStore.transact((tx) =>
+        postgresQuoteRepository.insert(tx, quote),
+      );
+    }
+
+    await postgresMessageStore.transact(async (tx) => {
+      const locked = await postgresQuoteRepository.findByIdForUpdate(
+        tx,
+        approved.id,
+      );
+
+      await postgresQuoteRepository.update(
+        tx,
+        approveQuote(locked ?? approved, {
+          approvedBy: '123.456.789-01',
+          now: NOW,
+        }),
+      );
+      await postgresQuoteRepository.update(
+        tx,
+        rejectQuote(rejected, { now: NOW }),
+      );
+      await postgresQuoteRepository.update(
+        tx,
+        cancelQuote(canceled, { now: NOW }),
+      );
+    });
+
+    expect(await postgresQuoteRepository.findById(approved.id)).toMatchObject({
+      status: 'APPROVED',
+      approvedBy: '12345678901',
+      approvedAt: NOW,
+    });
+    expect(await postgresQuoteRepository.findById(rejected.id)).toMatchObject({
+      status: 'REJECTED',
+      rejectionReason: 'CUSTOMER_REQUEST',
+      rejectedAt: NOW,
+    });
+    expect(await postgresQuoteRepository.findById(canceled.id)).toMatchObject({
+      status: 'CANCELED',
+      canceledAt: NOW,
+    });
+  });
+
+  it('reports a confirmed payment only for a payment in the CONFIRMED status', async () => {
+    const quote = newQuote(crypto.randomUUID());
+
+    await postgresMessageStore.transact((tx) =>
+      postgresQuoteRepository.insert(tx, quote),
+    );
+    await db`
+      INSERT INTO bunzina.payments (id, quote_id, service_order_id, amount_cents)
+      VALUES (${crypto.randomUUID()}, ${quote.id}, ${quote.serviceOrderId}, 100)
+    `;
+
+    expect(
+      await postgresMessageStore.transact((tx) =>
+        postgresPaymentReader.hasConfirmedPayment(tx, quote.id),
+      ),
+    ).toBe(false);
+
+    await db`UPDATE bunzina.payments SET status = 'CONFIRMED' WHERE quote_id = ${quote.id}`;
+
+    expect(
+      await postgresMessageStore.transact((tx) =>
+        postgresPaymentReader.hasConfirmedPayment(tx, quote.id),
+      ),
+    ).toBe(true);
   });
 
   it('keeps a single quote when two commands for the same service order race', async () => {

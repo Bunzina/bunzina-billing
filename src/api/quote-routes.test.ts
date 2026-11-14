@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import Elysia from 'elysia';
 import { issueQuote, type Quote } from '@/domain/quote/quote';
+import { createInMemoryMessageStore } from '@/test/in-memory-message-store';
 import { createInMemoryQuoteRepository } from '@/test/in-memory-quote-repository';
 import { quoteRoutes } from './quote-routes';
 
 const NOW = new Date('2026-09-17T14:03:22.115Z');
 
 let quotes: ReturnType<typeof createInMemoryQuoteRepository>;
+let database: ReturnType<typeof createInMemoryMessageStore>;
 let now: Date;
 let app: { handle: (request: Request) => Response | Promise<Response> };
 let quote: Quote;
@@ -21,7 +23,10 @@ const get = (id: string, document?: string) =>
 beforeEach(() => {
   now = NOW;
   quotes = createInMemoryQuoteRepository();
-  app = new Elysia().use(quoteRoutes({ quotes, clock: () => now }));
+  database = createInMemoryMessageStore();
+  app = new Elysia().use(
+    quoteRoutes({ quotes, store: database.store, clock: () => now }),
+  );
   quote = issueQuote({
     serviceOrderId: crypto.randomUUID(),
     customer: {
@@ -114,5 +119,164 @@ describe('GET /quotes/:id', () => {
     };
 
     expect(body.status).toBe('APPROVED');
+  });
+});
+
+const decide = (id: string, body: unknown) =>
+  app.handle(
+    new Request(`http://localhost/quotes/${id}/approval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+
+describe('POST /quotes/:id/approval', () => {
+  it('approves an issued quote and publishes quote-approved', async () => {
+    now = new Date('2026-09-17T14:20:00.000Z');
+
+    const response = await decide(quote.id, {
+      document: '123.456.789-01',
+      decision: 'APPROVED',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: quote.id,
+      status: 'APPROVED',
+    });
+    expect((await quotes.findById(quote.id))?.status).toBe('APPROVED');
+
+    const [event, ...others] = database.pendingEvents();
+
+    expect(others).toHaveLength(0);
+    expect(event).toMatchObject({
+      eventType: 'evt.billing.quote-approved',
+      correlationId: quote.serviceOrderId,
+      data: {
+        serviceOrderId: quote.serviceOrderId,
+        quoteId: quote.id,
+        totalCents: 21000,
+        currency: 'BRL',
+        approvedBy: '12345678901',
+        approvedAt: '2026-09-17T14:20:00.000Z',
+      },
+    });
+  });
+
+  it('rejects an issued quote and publishes quote-rejected as a customer request', async () => {
+    const response = await decide(quote.id, {
+      document: '12345678901',
+      decision: 'REJECTED',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: 'REJECTED' });
+    expect((await quotes.findById(quote.id))?.status).toBe('REJECTED');
+
+    const [event, ...others] = database.pendingEvents();
+
+    expect(others).toHaveLength(0);
+    expect(event).toMatchObject({
+      eventType: 'evt.billing.quote-rejected',
+      correlationId: quote.serviceOrderId,
+      data: {
+        serviceOrderId: quote.serviceOrderId,
+        quoteId: quote.id,
+        reason: 'CUSTOMER_REQUEST',
+        rejectedBy: '12345678901',
+      },
+    });
+  });
+
+  it('answers 404 and changes nothing when the document does not match', async () => {
+    const response = await decide(quote.id, {
+      document: '99999999999',
+      decision: 'APPROVED',
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain('Maria');
+    expect((await quotes.findById(quote.id))?.status).toBe('ISSUED');
+    expect(database.outboxEvents()).toHaveLength(0);
+  });
+
+  it('answers 404 for an unknown quote and for an id that is not a UUID', async () => {
+    const body = { document: '12345678901', decision: 'APPROVED' };
+
+    expect((await decide(crypto.randomUUID(), body)).status).toBe(404);
+    expect((await decide('abc', body)).status).toBe(404);
+  });
+
+  it.each([
+    ['without a decision', { document: '12345678901' }],
+    [
+      'with an unknown decision',
+      { document: '12345678901', decision: 'MAYBE' },
+    ],
+    ['without a document', { decision: 'APPROVED' }],
+  ])('answers 400 for a body %s', async (_label, body) => {
+    expect((await decide(quote.id, body)).status).toBe(400);
+    expect(database.outboxEvents()).toHaveLength(0);
+  });
+
+  it.each(['APPROVED', 'REJECTED', 'CANCELED', 'EXPIRED'] as const)(
+    'answers 409 for a quote that is already %s, without publishing anything',
+    async (status) => {
+      quotes.save({ ...quote, status });
+
+      const response = await decide(quote.id, {
+        document: '12345678901',
+        decision: 'APPROVED',
+      });
+
+      expect(response.status).toBe(409);
+      expect((await quotes.findById(quote.id))?.status).toBe(status);
+      expect(database.outboxEvents()).toHaveLength(0);
+    },
+  );
+
+  it('answers 409 when the same quote is decided a second time, and publishes only one event', async () => {
+    const body = { document: '12345678901', decision: 'APPROVED' };
+
+    expect((await decide(quote.id, body)).status).toBe(200);
+    expect((await decide(quote.id, body)).status).toBe(409);
+    expect(database.outboxEvents()).toHaveLength(1);
+  });
+
+  it('marks an issued quote as expired when it is decided after its validity, with no event', async () => {
+    now = new Date('2026-09-20T14:03:22.116Z');
+
+    const response = await decide(quote.id, {
+      document: '12345678901',
+      decision: 'APPROVED',
+    });
+
+    expect(response.status).toBe(409);
+    expect((await quotes.findById(quote.id))?.status).toBe('EXPIRED');
+    expect(database.outboxEvents()).toHaveLength(0);
+  });
+
+  it('still accepts the decision exactly at the expiry instant', async () => {
+    now = new Date('2026-09-20T14:03:22.115Z');
+
+    const response = await decide(quote.id, {
+      document: '12345678901',
+      decision: 'APPROVED',
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('does not expire the quote for a customer who does not own it', async () => {
+    now = new Date('2026-09-20T14:03:22.116Z');
+
+    const response = await decide(quote.id, {
+      document: '99999999999',
+      decision: 'APPROVED',
+    });
+
+    expect(response.status).toBe(404);
+    expect((await quotes.findById(quote.id))?.status).toBe('ISSUED');
   });
 });

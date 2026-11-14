@@ -1,5 +1,6 @@
 import '@/infrastructure/observability/logger-trace';
 
+import { createCancelQuoteHandler } from '@/application/quote/cancel-quote';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
 import { parseValidityHours } from '@/domain/quote/quote';
 import { db } from '@/infrastructure/configs/database';
@@ -9,6 +10,8 @@ import {
 } from '@/infrastructure/configs/email-transporter';
 import { createNodemailerQuoteMailer } from '@/infrastructure/email/nodemailer-quote-mailer';
 import { startConsumer } from '@/infrastructure/messaging/consumer';
+import { postgresMessageStore } from '@/infrastructure/messaging/message-store';
+import { postgresPaymentReader } from '@/infrastructure/persistence/postgres-payment-reader';
 import { postgresQuoteRepository } from '@/infrastructure/persistence/postgres-quote-repository';
 import { quoteRoutes } from './quote-routes';
 import { startRelay } from '@/infrastructure/messaging/outbox-relay';
@@ -99,7 +102,13 @@ async function checkDependencies(): Promise<void> {
 
 const clock = () => new Date();
 
-app.use(quoteRoutes({ quotes: postgresQuoteRepository, clock }));
+app.use(
+  quoteRoutes({
+    quotes: postgresQuoteRepository,
+    store: postgresMessageStore,
+    clock,
+  }),
+);
 
 app.get('/', ({ redirect }) => redirect('/swagger'), {
   detail: { hide: true },
@@ -125,6 +134,11 @@ if (import.meta.main) {
           }),
           clock,
           validityHours: parseValidityHours(process.env.QUOTE_VALIDITY_HOURS),
+        }),
+        'cmd.billing.cancel-quote': createCancelQuoteHandler({
+          quotes: postgresQuoteRepository,
+          payments: postgresPaymentReader,
+          clock,
         }),
       },
     }).catch((error: unknown) => {

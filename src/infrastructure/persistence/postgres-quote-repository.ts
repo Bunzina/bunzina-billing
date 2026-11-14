@@ -17,6 +17,11 @@ type QuoteRow = {
   items: Quote['items'];
   expires_at: Date;
   created_at: Date;
+  approved_at: Date | null;
+  approved_by: string | null;
+  rejected_at: Date | null;
+  rejection_reason: 'CUSTOMER_REQUEST' | null;
+  canceled_at: Date | null;
 };
 
 const toQuote = (row: QuoteRow): Quote => ({
@@ -36,12 +41,25 @@ const toQuote = (row: QuoteRow): Quote => ({
   currency: row.currency,
   expiresAt: new Date(row.expires_at),
   createdAt: new Date(row.created_at),
+  ...(row.approved_at ? { approvedAt: new Date(row.approved_at) } : {}),
+  ...(row.approved_by ? { approvedBy: row.approved_by } : {}),
+  ...(row.rejected_at ? { rejectedAt: new Date(row.rejected_at) } : {}),
+  ...(row.rejection_reason ? { rejectionReason: row.rejection_reason } : {}),
+  ...(row.canceled_at ? { canceledAt: new Date(row.canceled_at) } : {}),
 });
 
 export const postgresQuoteRepository: QuoteRepository = {
   async findById(id) {
     const [row] = await db`
       SELECT * FROM bunzina.quotes WHERE id = ${id}
+    `;
+
+    return row ? toQuote(row as QuoteRow) : null;
+  },
+
+  async findByIdForUpdate(tx, id) {
+    const [row] = await tx`
+      SELECT * FROM bunzina.quotes WHERE id = ${id} FOR UPDATE
     `;
 
     return row ? toQuote(row as QuoteRow) : null;
@@ -73,6 +91,20 @@ export const postgresQuoteRepository: QuoteRepository = {
         ${quote.currency}, ${JSON.stringify(quote.items)}::jsonb,
         ${quote.expiresAt}, ${quote.createdAt}, ${quote.createdAt}
       )
+    `;
+  },
+
+  async update(tx, quote) {
+    await tx`
+      UPDATE bunzina.quotes SET
+        status = ${quote.status},
+        approved_at = ${quote.approvedAt ?? null},
+        approved_by = ${quote.approvedBy ?? null},
+        rejected_at = ${quote.rejectedAt ?? null},
+        rejection_reason = ${quote.rejectionReason ?? null},
+        canceled_at = ${quote.canceledAt ?? null},
+        updated_at = now()
+      WHERE id = ${quote.id}
     `;
   },
 };
