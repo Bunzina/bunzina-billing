@@ -156,12 +156,38 @@ O Mercado Pago notifica o webhook configurado no painel da aplicação
   ([ADR 0001](docs/adr/0001-payment-failure-and-late-payment.md)).
 - **Provedor fora do ar**, ou `merchant_order` ainda não consultável (`404`), responde `502`, para o Mercado Pago entregar de novo. Notificação sem
   Pagamento correspondente responde `200` (não adianta repetir).
-- Pagamento aprovado que chega com o Pagamento já cancelado ou expirado é só registrado
-  aqui. O estorno automático é a fatia seguinte.
+- **Pagamento tardio.** Aprovação que chega com o Pagamento já `FAILED` (cancelamento, timeout
+  ou expiração) é estornada na hora, com o id do Pagamento como chave de idempotência. O
+  Pagamento continua `FAILED`, ganha `provider_refund_id` e `refunded_at`, e o estorno entra em
+  `payment_events` como `late-payment-refunded`. Não publica evento de saga
+  ([ADR 0001](docs/adr/0001-payment-failure-and-late-payment.md)). Se o provedor falhar, responde
+  `502` e o Mercado Pago entrega de novo; uma notificação repetida depois do estorno só é
+  registrada (`payment-approval-ignored`).
 
-Métricas: `billing_payments_total{status}` e
+Métricas: `billing_payments_total{status}`, `billing_late_payments_refunded_total` e
 `billing_mercadopago_request_duration_seconds{operation,result}` (`operation` é `create_order`,
-`get_merchant_order` ou `get_order`; `result` é `success` ou `error`).
+`get_merchant_order`, `get_order`, `cancel_order` ou `refund_order`; `result` é `success` ou
+`error`).
+
+## Estorno (`cmd.billing.refund`)
+
+O orquestrador manda estornar um Pagamento `CONFIRMED` (`serviceOrderId`, `paymentId`,
+`amountCents`, `currency`, `reason`). O Billing estorna o valor integral em
+`POST /v1/orders/{id}/refund`, com o id do Pagamento como `X-Idempotency-Key`, marca o
+Pagamento como `REFUNDED` com `provider_refund_id` e `refunded_at`, registra
+`payment-refunded` em `payment_events` e publica `evt.billing.payment-refunded` com
+`providerRefundId`.
+
+- **Repetido:** num Pagamento já `REFUNDED` não chama o provedor e reemite
+  `payment-refunded` com o estorno original.
+- **Não confirmado:** Pagamento `PENDING` ou `FAILED`, valor ou moeda diferentes do Pagamento,
+  OS que não confere ou Pagamento inexistente vão para a DLQ, e o alerta da DLQ dispara.
+- **Provedor fora do ar:** o consumidor repete com espera e, esgotadas as tentativas, a mensagem
+  vai para a DLQ com o Pagamento ainda `CONFIRMED`. A chave de idempotência torna a repetição
+  segura. Se a order já estiver estornada sob outra chave (`409 order_already_refunded`), o
+  adaptador lê o estorno existente na order.
+
+Métrica: `billing_refunds_total` (estornos mandados pela saga; os tardios têm a sua própria).
 
 | Variável | Padrão | Uso |
 | --- | --- | --- |
@@ -169,7 +195,7 @@ Métricas: `billing_payments_total{status}` e
 | `EMAIL_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — | Servidor SMTP |
 | `EMAIL` | `bunzina@local.com` | Remetente |
 | `PAYMENT_LINK_VALIDITY_MINUTES` | `30` | Validade do link de pagamento, em minutos inteiros; vazio ou inválido volta para 30 |
-| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret). Sem ele o `cmd.billing.charge` não é consumido e vai para a DLQ, e o webhook não é servido |
+| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret). Sem ele o `cmd.billing.charge` e o `cmd.billing.refund` não são consumidos e vão para a DLQ, e o webhook não é servido |
 | `MP_WEBHOOK_SECRET` | — | Segredo de assinatura do webhook do Mercado Pago (secret) |
 | `PUBLIC_BASE_URL` | — | Endereço público do ALB, base das URLs que o Mercado Pago chama |
 

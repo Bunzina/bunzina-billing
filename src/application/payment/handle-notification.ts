@@ -1,4 +1,8 @@
-import { confirmPayment, type Payment } from '@/domain/payment/payment';
+import {
+  confirmPayment,
+  refundLatePayment,
+  type Payment,
+} from '@/domain/payment/payment';
 import type {
   PaymentEventLog,
   PaymentEventType,
@@ -10,7 +14,10 @@ import type {
 import type { PaymentRepository } from '@/domain/payment/payment-repository';
 import { buildEnvelope } from '@/infrastructure/messaging/envelope';
 import type { MessageStore } from '@/infrastructure/messaging/message-store';
-import { paymentsTotal } from '@/infrastructure/observability/metrics';
+import {
+  lateRefundsTotal,
+  paymentsTotal,
+} from '@/infrastructure/observability/metrics';
 
 export type Notification =
   | { authentic: false; received: Record<string, unknown> }
@@ -27,6 +34,7 @@ type Dependencies = {
   events: PaymentEventLog;
   gateway: PaymentGateway;
   store: MessageStore;
+  clock?: () => Date;
 };
 
 type Paid = Extract<ProviderOrder, { state: 'PAID' }>;
@@ -48,17 +56,18 @@ export const createHandleNotification = ({
   events,
   gateway,
   store,
+  clock = () => new Date(),
 }: Dependencies) => {
   const confirm = async (payment: Payment, order: Paid): Promise<boolean> =>
     store.transact(async (tx) => {
       const confirmed = confirmPayment(payment, order);
       const changed = await payments.confirmIfPending(tx, confirmed);
-      await events.record(tx, {
-        paymentId: payment.id,
-        type: changed ? 'payment-confirmed' : 'payment-approval-ignored',
-        payload: { providerPaymentId: payment.providerPaymentId },
-      });
       if (changed) {
+        await events.record(tx, {
+          paymentId: payment.id,
+          type: 'payment-confirmed',
+          payload: { providerPaymentId: payment.providerPaymentId },
+        });
         await store.enqueue(
           tx,
           buildEnvelope({
@@ -70,6 +79,57 @@ export const createHandleNotification = ({
       }
       return changed;
     });
+
+  const refundLate = async (
+    payment: Payment,
+    providerPaymentId: string,
+  ): Promise<boolean> => {
+    const { providerRefundId } = await gateway.refund({
+      paymentId: payment.id,
+      providerPaymentId,
+    });
+    const refunded = refundLatePayment(payment, {
+      providerRefundId,
+      refundedAt: clock(),
+    });
+
+    return store.transact(async (tx) => {
+      if (!(await payments.markLateRefunded(tx, refunded))) {
+        return false;
+      }
+      await events.record(tx, {
+        paymentId: payment.id,
+        type: 'late-payment-refunded',
+        payload: { providerRefundId, failureReason: payment.failureReason },
+      });
+      return true;
+    });
+  };
+
+  const settleApproval = async (
+    payment: Payment,
+    providerPaymentId: string,
+    order: Paid,
+  ): Promise<void> => {
+    if (await confirm(payment, order)) {
+      paymentsTotal.inc({ status: 'CONFIRMED' });
+      return;
+    }
+
+    const current = await payments.findById(payment.id);
+    if (!current || current.status !== 'FAILED' || current.refundedAt) {
+      await record(
+        'payment-approval-ignored',
+        { providerPaymentId },
+        payment.id,
+      );
+      return;
+    }
+
+    if (await refundLate(current, providerPaymentId)) {
+      lateRefundsTotal.inc();
+    }
+  };
 
   const record = (
     type: PaymentEventType,
@@ -103,8 +163,8 @@ export const createHandleNotification = ({
     if (order.state === 'DECLINED') {
       await record('payment-declined', { detail: order.detail }, payment.id);
     }
-    if (order.state === 'PAID' && (await confirm(payment, order))) {
-      paymentsTotal.inc({ status: 'CONFIRMED' });
+    if (order.state === 'PAID') {
+      await settleApproval(payment, payment.providerPaymentId, order);
     }
 
     return 'processed';

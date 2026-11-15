@@ -201,8 +201,8 @@ describe('POST /webhooks/mercadopago for an approved payment', () => {
     ]);
   });
 
-  it('does not confirm a payment that is no longer pending', async () => {
-    payments.save({ ...pending, status: 'FAILED' });
+  it('does not confirm a payment that is no longer pending, and refunds the late approval instead', async () => {
+    payments.save({ ...pending, status: 'FAILED', failureReason: 'EXPIRED' });
     gateway.setOrder('ORDTST01', {
       state: 'PAID',
       method: 'pix',
@@ -213,8 +213,9 @@ describe('POST /webhooks/mercadopago for an approved payment', () => {
 
     expect(response.status).toBe(200);
     expect(payments.all()[0]?.status).toBe('FAILED');
+    expect(gateway.refunds).toHaveLength(1);
     expect(database.pendingEvents()).toEqual([]);
-    expect(events.all().at(-1)?.type).toBe('payment-approval-ignored');
+    expect(events.all().at(-1)?.type).toBe('late-payment-refunded');
   });
 
   it('only records a declined card, without touching the payment or publishing payment-failed', async () => {

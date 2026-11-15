@@ -23,6 +23,9 @@ export const createInMemoryPaymentRepository = () => {
     async findById(id) {
       return payments.get(id) ?? null;
     },
+    async findByIdForUpdate(_tx, id) {
+      return payments.get(id) ?? null;
+    },
     async findByQuoteId(quoteId) {
       return byQuote(quoteId);
     },
@@ -45,6 +48,23 @@ export const createInMemoryPaymentRepository = () => {
 
     async failIfPending(_tx, failed) {
       return replaceIfPending(failed);
+    },
+
+    async refundIfConfirmed(_tx, refunded) {
+      if (payments.get(refunded.id)?.status !== 'CONFIRMED') {
+        return false;
+      }
+      payments.set(refunded.id, refunded);
+      return true;
+    },
+
+    async markLateRefunded(_tx, refunded) {
+      const current = payments.get(refunded.id);
+      if (current?.status !== 'FAILED' || current.refundedAt) {
+        return false;
+      }
+      payments.set(refunded.id, refunded);
+      return true;
     },
 
     async claimExpired(_tx, now, limit) {

@@ -18,6 +18,8 @@ type PaymentRow = {
   checkout_url: string | null;
   method: string | null;
   paid_at: Date | null;
+  provider_refund_id: string | null;
+  refunded_at: Date | null;
   expires_at: Date | null;
   failure_reason: PaymentFailureReason | null;
   failure_detail: string | null;
@@ -39,6 +41,10 @@ const toPayment = (row: PaymentRow): Payment => ({
   ...(row.checkout_url ? { checkoutUrl: row.checkout_url } : {}),
   ...(row.method ? { method: row.method } : {}),
   ...(row.paid_at ? { paidAt: new Date(row.paid_at) } : {}),
+  ...(row.provider_refund_id
+    ? { providerRefundId: row.provider_refund_id }
+    : {}),
+  ...(row.refunded_at ? { refundedAt: new Date(row.refunded_at) } : {}),
   ...(row.expires_at ? { expiresAt: new Date(row.expires_at) } : {}),
   ...(row.failure_reason ? { failureReason: row.failure_reason } : {}),
   ...(row.failure_detail ? { failureDetail: row.failure_detail } : {}),
@@ -49,6 +55,13 @@ export const postgresPaymentRepository: PaymentRepository = {
     const [row] = await db`
       SELECT * FROM bunzina.payments WHERE id = ${id}
     `;
+    return row ? toPayment(row as PaymentRow) : null;
+  },
+  async findByIdForUpdate(tx, id) {
+    const [row] = await tx`
+      SELECT * FROM bunzina.payments WHERE id = ${id} FOR UPDATE
+    `;
+
     return row ? toPayment(row as PaymentRow) : null;
   },
   async findByQuoteId(quoteId) {
@@ -101,6 +114,29 @@ export const postgresPaymentRepository: PaymentRepository = {
       SET status = 'FAILED', failure_reason = ${failed.failureReason ?? null},
           failure_detail = ${failed.failureDetail ?? null}, updated_at = now()
       WHERE id = ${failed.id} AND status = 'PENDING'
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  async refundIfConfirmed(tx, refunded) {
+    const rows = await tx`
+      UPDATE bunzina.payments
+      SET status = 'REFUNDED',
+          provider_refund_id = ${refunded.providerRefundId ?? null},
+          refunded_at = ${refunded.refundedAt ?? null}, updated_at = now()
+      WHERE id = ${refunded.id} AND status = 'CONFIRMED'
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  async markLateRefunded(tx, refunded) {
+    const rows = await tx`
+      UPDATE bunzina.payments
+      SET provider_refund_id = ${refunded.providerRefundId ?? null},
+          refunded_at = ${refunded.refundedAt ?? null}, updated_at = now()
+      WHERE id = ${refunded.id} AND status = 'FAILED' AND refunded_at IS NULL
       RETURNING id
     `;
     return rows.length > 0;

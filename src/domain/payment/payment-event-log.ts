@@ -9,6 +9,8 @@ export type PaymentEventType =
   | 'payment-declined'
   | 'payment-expired'
   | 'payment-canceled'
+  | 'payment-refunded'
+  | 'late-payment-refunded'
   | 'checkout-expiry-failed';
 
 export type PaymentEvent = {

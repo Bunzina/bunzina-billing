@@ -5,6 +5,8 @@ import merchantOrder from '../../../docs/mercadopago/fixtures/merchant-order-get
 import orderPaid from '../../../docs/mercadopago/fixtures/order-get-paid.json';
 import orderCancel from '../../../docs/mercadopago/fixtures/order-cancel.json';
 import orderAlreadyCanceled from '../../../docs/mercadopago/fixtures/order-cancel-already-canceled.json';
+import orderRefund from '../../../docs/mercadopago/fixtures/order-refund.json';
+import orderAlreadyRefunded from '../../../docs/mercadopago/fixtures/order-refund-already-refunded.json';
 import orderCreated from '../../../docs/mercadopago/fixtures/order-create.json';
 import { createMercadoPagoPaymentGateway } from './mercadopago-payment-gateway';
 
@@ -399,6 +401,103 @@ describe('MercadoPagoPaymentGateway.expireCheckout', () => {
     expect(error).toMatchObject({
       retryable,
       providerStatus: `http_${status}`,
+    });
+  });
+});
+
+describe('MercadoPagoPaymentGateway.refund', () => {
+  const refundRequest = {
+    paymentId: PAYMENT_ID,
+    providerPaymentId: 'ORDTST01M7BF98HY7EX9SPPDJQVW7PCC',
+  };
+
+  it('refunds the whole order with the payment id as idempotency key and returns the refund id', async () => {
+    const { gateway, calls } = gatewayAnswering(() =>
+      Response.json(orderRefund.response, { status: 201 }),
+    );
+
+    const refund = await gateway.refund(refundRequest);
+
+    expect(refund).toEqual({
+      providerRefundId: 'REF01M7BFB4N870WS92EVWAPDEB5G',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(
+      'https://api.mercadopago.test/v1/orders/ORDTST01M7BF98HY7EX9SPPDJQVW7PCC/refund',
+    );
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[0]?.init.body).toBeUndefined();
+    expect(calls[0]?.init.headers).toMatchObject({
+      Authorization: 'Bearer TEST-TOKEN',
+      'X-Idempotency-Key': PAYMENT_ID,
+    });
+  });
+
+  it('reads the existing refund when the order is already refunded under another key', async () => {
+    const calls: Call[] = [];
+    const gateway = createMercadoPagoPaymentGateway({
+      accessToken: 'TEST-TOKEN',
+      baseUrl: 'https://api.mercadopago.test',
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), init: init ?? {} });
+
+        return init?.method === 'POST'
+          ? Response.json(orderAlreadyRefunded.response, { status: 409 })
+          : Response.json(orderRefund.response, { status: 200 });
+      },
+    });
+
+    const refund = await gateway.refund(refundRequest);
+
+    expect(refund.providerRefundId).toBe('REF01M7BFB4N870WS92EVWAPDEB5G');
+    expect(calls.map((call) => call.init.method)).toEqual(['POST', 'GET']);
+    expect(calls[1]?.url).toBe(
+      'https://api.mercadopago.test/v1/orders/ORDTST01M7BF98HY7EX9SPPDJQVW7PCC',
+    );
+  });
+
+  it('rejects an answer without a refund id', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json({ status: 'refunded', transactions: {} }, { status: 201 }),
+    );
+
+    const error = await gateway.refund(refundRequest).catch((e) => e);
+
+    expect(error).toMatchObject({
+      retryable: false,
+      providerStatus: 'invalid_response',
+    });
+  });
+
+  it.each([
+    ['another 409', 409, { errors: [{ code: 'order_not_refundable' }] }, false],
+    ['a 401', 401, {}, false],
+    ['a 503', 503, {}, true],
+  ])('fails on %s', async (_label, status, body, retryable) => {
+    const { gateway } = gatewayAnswering(() => Response.json(body, { status }));
+
+    const error = await gateway.refund(refundRequest).catch((e) => e);
+
+    expect(error).toBeInstanceOf(PaymentGatewayError);
+    expect(error).toMatchObject({
+      retryable,
+      providerStatus: `http_${status}`,
+    });
+  });
+
+  it('treats a network failure as retryable', async () => {
+    const gateway = createMercadoPagoPaymentGateway({
+      accessToken: 'TEST-TOKEN',
+      fetch: async () => {
+        throw new Error('ECONNRESET');
+      },
+    });
+
+    const error = await gateway.refund(refundRequest).catch((e) => e);
+
+    expect(error).toMatchObject({
+      retryable: true,
+      providerStatus: 'unreachable',
     });
   });
 });
