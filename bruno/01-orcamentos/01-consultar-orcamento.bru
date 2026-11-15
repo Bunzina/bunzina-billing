@@ -1,0 +1,27 @@
+meta {
+  name: Consultar orçamento
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/quotes/{{quoteId}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Customer-Document: {{customerDocument}}
+}
+
+docs {
+  Devolve itens, totais, situação e o `checkoutUrl` enquanto o pagamento está pendente.
+  Documento divergente, ausente ou id inválido respondem 404. Um orçamento emitido e
+  vencido aparece como `EXPIRED`.
+
+  O `quoteId` vem do `evt.billing.quote-issued` (campo `quoteId`) ou da tabela `quotes`.
+}
+
+assert {
+  res.status: eq 200
+}

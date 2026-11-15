@@ -1,0 +1,32 @@
+meta {
+  name: Recusar orçamento
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/quotes/{{quoteId}}/approval
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "document": "{{customerDocument}}",
+    "decision": "REJECTED"
+  }
+}
+
+docs {
+  Recusa o orçamento e publica `evt.billing.quote-rejected` com motivo `CUSTOMER_REQUEST`.
+  Use outro orçamento emitido: um orçamento já decidido responde 409.
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq REJECTED
+}
