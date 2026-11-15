@@ -8,6 +8,14 @@ export const createInMemoryPaymentRepository = () => {
     [...payments.values()].find((payment) => payment.quoteId === quoteId) ??
     null;
 
+  const replaceIfPending = (next: Payment): boolean => {
+    if (payments.get(next.id)?.status !== 'PENDING') {
+      return false;
+    }
+    payments.set(next.id, next);
+    return true;
+  };
+
   const repository: PaymentRepository & {
     all: () => Payment[];
     save: (payment: Payment) => void;
@@ -32,12 +40,24 @@ export const createInMemoryPaymentRepository = () => {
     },
 
     async confirmIfPending(_tx, confirmed) {
-      if (payments.get(confirmed.id)?.status !== 'PENDING') {
-        return false;
-      }
-      payments.set(confirmed.id, confirmed);
-      return true;
+      return replaceIfPending(confirmed);
     },
+
+    async failIfPending(_tx, failed) {
+      return replaceIfPending(failed);
+    },
+
+    async claimExpired(_tx, now, limit) {
+      return [...payments.values()]
+        .filter(
+          (payment) =>
+            payment.status === 'PENDING' &&
+            payment.expiresAt !== undefined &&
+            payment.expiresAt <= now,
+        )
+        .slice(0, limit);
+    },
+
     all: () => [...payments.values()],
     save: (payment) => {
       payments.set(payment.id, payment);

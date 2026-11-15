@@ -58,6 +58,7 @@ const storePendingPayment = async () => {
       amountCents: quote.totalCents,
       currency: quote.currency,
       now: NOW,
+      validityMinutes: 30,
     }),
     { providerPaymentId: 'ORDTST01', checkoutUrl: 'https://checkout.fake/x' },
   );

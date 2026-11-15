@@ -6,7 +6,10 @@ export type PaymentEventType =
   | 'webhook-unmatched'
   | 'payment-confirmed'
   | 'payment-approval-ignored'
-  | 'payment-declined';
+  | 'payment-declined'
+  | 'payment-expired'
+  | 'payment-canceled'
+  | 'checkout-expiry-failed';
 
 export type PaymentEvent = {
   paymentId?: string;

@@ -21,11 +21,18 @@ describe('createPendingPayment', () => {
     amountCents: 21000,
     currency: 'BRL',
     now: new Date('2026-09-17T14:03:22.115Z'),
+    validityMinutes: 30,
   };
 
   it('gives the same payment the same id every time it is created for a quote', () => {
     expect(createPendingPayment(input).id).toBe(
       createPendingPayment({ ...input, now: new Date() }).id,
+    );
+  });
+
+  it('expires the payment after its validity', () => {
+    expect(createPendingPayment(input).expiresAt).toEqual(
+      new Date('2026-09-17T14:33:22.115Z'),
     );
   });
 

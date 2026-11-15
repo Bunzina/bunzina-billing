@@ -11,11 +11,15 @@ export const createFakePaymentGateway = () => {
   const lookups: string[] = [];
   const references = new Map<string, string>();
   const orders = new Map<string, ProviderOrder>();
+  const expired: string[] = [];
+  const expirationFailures: Error[] = [];
   let lookupFailure: Error | null = null;
 
   const gateway: PaymentGateway & {
     calls: CheckoutRequest[];
     lookups: string[];
+    expired: string[];
+    failExpirations: (...errors: Error[]) => void;
     failNext: (...errors: Error[]) => void;
     failLookups: (error: Error | null) => void;
     knowNotification: (notificationId: string, paymentId: string) => void;
@@ -46,8 +50,19 @@ export const createFakePaymentGateway = () => {
       }
       return orders.get(providerPaymentId) ?? { state: 'OPEN' };
     },
+    async expireCheckout(providerPaymentId) {
+      const failure = expirationFailures.shift();
+      if (failure) {
+        throw failure;
+      }
+      expired.push(providerPaymentId);
+    },
     calls,
     lookups,
+    expired,
+    failExpirations: (...errors) => {
+      expirationFailures.push(...errors);
+    },
     failNext: (...errors) => {
       failures.push(...errors);
     },

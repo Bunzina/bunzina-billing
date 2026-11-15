@@ -4,7 +4,6 @@ import {
   attachCheckout,
   createPendingPayment,
   failPayment,
-  type Payment,
 } from '@/domain/payment/payment';
 import {
   PaymentGatewayError,
@@ -14,6 +13,7 @@ import {
 } from '@/domain/payment/payment-gateway';
 import type { PaymentMailer } from '@/domain/payment/payment-mailer';
 import type { PaymentRepository } from '@/domain/payment/payment-repository';
+import { paymentFailedData } from './payment-failed-event';
 import type { QuoteRepository } from '@/domain/quote/quote-repository';
 import {
   InvalidMessageError,
@@ -25,22 +25,11 @@ import {
   paymentsTotal,
 } from '@/infrastructure/observability/metrics';
 
-const MINUTE_MS = 60 * 1000;
-
 const commandSchema = z.object({
   serviceOrderId: z.uuid(),
   quoteId: z.uuid(),
   totalCents: z.number().int().positive(),
   currency: z.string().regex(/^[A-Z]{3}$/),
-});
-
-const paymentFailedData = (payment: Payment) => ({
-  serviceOrderId: payment.serviceOrderId,
-  paymentId: payment.id,
-  quoteId: payment.quoteId,
-  reason: payment.failureReason,
-  detail: 'The payment provider could not create the checkout',
-  providerStatus: payment.failureDetail,
 });
 
 const createCheckoutWithRetry = async (
@@ -131,6 +120,7 @@ export const createChargeHandler =
       amountCents: quote.totalCents,
       currency: quote.currency,
       now,
+      validityMinutes,
     });
 
     let checkout: Checkout;
@@ -179,7 +169,7 @@ export const createChargeHandler =
         await mailer.sendPaymentLink({
           quote,
           checkoutUrl: checkout.checkoutUrl,
-          expiresAt: new Date(now.getTime() + validityMinutes * MINUTE_MS),
+          expiresAt: pending.expiresAt ?? now,
         });
       } catch (error) {
         emailFailuresTotal.inc({ template: 'payment-link' });

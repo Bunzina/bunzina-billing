@@ -85,6 +85,7 @@ const stagePendingPayment = () => {
       amountCents: 21000,
       currency: 'BRL',
       now: new Date('2026-09-17T14:03:22.115Z'),
+      validityMinutes: 30,
     }),
     { providerPaymentId: 'ORDTST01', checkoutUrl: 'https://checkout.fake/x' },
   );
