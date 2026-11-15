@@ -1,12 +1,12 @@
-import { failPayment, type Payment } from "@/domain/payment/payment";
-import type { PaymentEventLog } from "@/domain/payment/payment-event-log";
-import type { PaymentGateway } from "@/domain/payment/payment-gateway";
-import type { PaymentRepository } from "@/domain/payment/payment-repository";
-import { buildEnvelope } from "@/infrastructure/messaging/envelope";
-import type { MessageStore } from "@/infrastructure/messaging/message-store";
-import { paymentsTotal } from "@/infrastructure/observability/metrics";
-import { expireCheckout } from "./expire-checkout";
-import { paymentFailedData } from "./payment-failed-event";
+import { failPayment, type Payment } from '@/domain/payment/payment';
+import type { PaymentEventLog } from '@/domain/payment/payment-event-log';
+import type { PaymentGateway } from '@/domain/payment/payment-gateway';
+import type { PaymentRepository } from '@/domain/payment/payment-repository';
+import { buildEnvelope } from '@/infrastructure/messaging/envelope';
+import type { MessageStore } from '@/infrastructure/messaging/message-store';
+import { paymentsTotal } from '@/infrastructure/observability/metrics';
+import { expireCheckout } from './expire-checkout';
+import { paymentFailedData } from './payment-failed-event';
 
 export const DEFAULT_EXPIRATION_BATCH_SIZE = 20;
 
@@ -34,8 +34,8 @@ export const createExpirePayments = ({
 
       for (const payment of due) {
         const failed: Payment = failPayment(payment, {
-          reason: "EXPIRED",
-          detail: "expired",
+          reason: 'EXPIRED',
+          detail: 'expired',
         });
 
         if (!(await payments.failIfPending(tx, failed))) {
@@ -44,13 +44,13 @@ export const createExpirePayments = ({
 
         await events.record(tx, {
           paymentId: payment.id,
-          type: "payment-expired",
+          type: 'payment-expired',
           payload: { expiresAt: payment.expiresAt?.toISOString() },
         });
         await store.enqueue(
           tx,
           buildEnvelope({
-            eventType: "evt.billing.payment-failed",
+            eventType: 'evt.billing.payment-failed',
             correlationId: failed.serviceOrderId,
             data: paymentFailedData(failed),
           }),
@@ -67,7 +67,7 @@ export const createExpirePayments = ({
     for (;;) {
       const { claimed, expired } = await expireBatch();
 
-      paymentsTotal.inc({ status: "FAILED" }, expired.length);
+      paymentsTotal.inc({ status: 'FAILED' }, expired.length);
       total += expired.length;
 
       for (const payment of expired) {
