@@ -42,6 +42,11 @@ export type Quote = {
   currency: string;
   expiresAt: Date;
   createdAt: Date;
+  approvedAt?: Date;
+  approvedBy?: string;
+  rejectedAt?: Date;
+  rejectionReason?: 'CUSTOMER_REQUEST';
+  canceledAt?: Date;
 };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -87,7 +92,35 @@ export const issueQuote = ({
   };
 };
 
-const normalizeDocument = (document: string): string =>
+export const approveQuote = (
+  quote: Quote,
+  { approvedBy, now }: { approvedBy: string; now: Date },
+): Quote => ({
+  ...quote,
+  status: 'APPROVED',
+  approvedAt: now,
+  approvedBy: normalizeDocument(approvedBy),
+});
+
+export const expireQuote = (quote: Quote): Quote => ({
+  ...quote,
+  status: 'EXPIRED',
+});
+
+export const cancelQuote = (quote: Quote, { now }: { now: Date }): Quote => ({
+  ...quote,
+  status: 'CANCELED',
+  canceledAt: now,
+});
+
+export const rejectQuote = (quote: Quote, { now }: { now: Date }): Quote => ({
+  ...quote,
+  status: 'REJECTED',
+  rejectedAt: now,
+  rejectionReason: 'CUSTOMER_REQUEST',
+});
+
+export const normalizeDocument = (document: string): string =>
   document.replace(/[^0-9a-z]/gi, '').toLowerCase();
 
 export const belongsToCustomer = (quote: Quote, document: string): boolean => {

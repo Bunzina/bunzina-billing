@@ -76,7 +76,8 @@ Um handler que considera a mensagem inválida lança `InvalidMessageError`: ela 
 direto para a DLQ, sem retry. Qualquer outro erro é repetido até 3 vezes.
 
 Testes: os unitários usam o `MessageStore` em memória (`src/test`). Os de integração
-(`bun run test:integration`, com `DATABASE_URL` apontando para um Postgres) provam o
+(`bun run test:integration`, que sobe um Postgres descartável local, o `db-test` na
+porta 5433, e nunca roda contra outro banco) provam o
 que mock não prova: a transação, o outbox e o `SKIP LOCKED` com duas instâncias. Eles
 rodam no job `test/integration` do CI, fora do gate de 80%. O `lcov` deles segue para o
 SonarCloud junto com o dos unitários. O `message-store.ts`, que é só SQL, fica fora do

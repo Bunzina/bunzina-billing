@@ -14,6 +14,10 @@ export const createInMemoryQuoteRepository = () => {
       return quotes.get(id) ?? null;
     },
 
+    async findByIdForUpdate(_tx, id) {
+      return quotes.get(id) ?? null;
+    },
+
     async findActiveByServiceOrder(_tx, serviceOrderId) {
       return (
         [...quotes.values()].find(
@@ -24,6 +28,10 @@ export const createInMemoryQuoteRepository = () => {
     },
 
     async insert(_tx, quote) {
+      quotes.set(quote.id, quote);
+    },
+
+    async update(_tx, quote) {
       quotes.set(quote.id, quote);
     },
 

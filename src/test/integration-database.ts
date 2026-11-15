@@ -4,8 +4,6 @@ import { db } from '@/infrastructure/configs/database';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
 
-export const hasIntegrationDatabase = Boolean(process.env.DATABASE_URL);
-
 export const applyMigrations = async (): Promise<void> => {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((file) => /^\d+_.+\.sql$/.test(file))
