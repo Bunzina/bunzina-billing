@@ -10,7 +10,7 @@ No sandbox o estorno pela API de pagamentos devolveu `401 Unauthorized use of li
 |---|---|---|
 | Criar | `POST /v1/orders` | `external_reference` = id do Pagamento. O link é `checkout_url`. `expiration_time` em ISO 8601 (`PT30M`). Boleto fora com `config.payment_method.not_allowed_types: ["ticket"]`. |
 | Consultar | `GET /v1/orders/{id}` | O pagamento está em `transactions.payments[]`. Pago é `status: processed`, `status_detail: accredited`. |
-| Estornar | `POST /v1/orders/{id}/refund` | Corpo vazio é estorno total. Mesma `X-Idempotency-Key` repete a resposta sem estornar de novo. Chave nova numa order já estornada devolve `409 order_already_refunded`, que o adaptador trata como "já estornado". |
+| Estornar | `POST /v1/orders/{id}/refund` | Corpo vazio é estorno total. Mesma `X-Idempotency-Key` repete a resposta sem estornar de novo. A chave é da conta inteira, não do endpoint: o estorno usa `refund-<id do Pagamento>`, porque reusar o id do Pagamento (a chave da criação) devolve `409 idempotency_key_already_used`, confirmado no sandbox. Chave nova numa order já estornada devolve `409 order_already_refunded`, que o adaptador trata como "já estornado". |
 | Expirar | `POST /v1/orders/{id}/cancel` | Só para order não paga. Repetir devolve `409 order_already_canceled`. |
 
 `provider_payment_id` guarda o **id da order** (`ORD...`), porque estorno, cancelamento e consulta usam esse id. O `provider_refund_id` guarda o id do estorno (`REF...`).

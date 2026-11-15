@@ -1,3 +1,4 @@
+import logger from '@lucas-pmelo/logger';
 import type Elysia from 'elysia';
 import { PaymentGatewayError } from '@/domain/payment/payment-gateway';
 import type { createHandleNotification } from '@/application/payment/handle-notification';
@@ -60,6 +61,13 @@ export const webhookRoutes =
             : Response.json({ status: 'ok' });
         } catch (error) {
           if (error instanceof PaymentGatewayError) {
+            logger.warn({
+              message: 'payment provider failed while handling a notification',
+              notificationId,
+              providerStatus: error.providerStatus,
+              retryable: error.retryable,
+              error: error.message,
+            });
             return Response.json(
               { message: 'Payment provider unavailable' },
               { status: 502 },

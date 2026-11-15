@@ -411,7 +411,7 @@ describe('MercadoPagoPaymentGateway.refund', () => {
     providerPaymentId: 'ORDTST01M7BF98HY7EX9SPPDJQVW7PCC',
   };
 
-  it('refunds the whole order with the payment id as idempotency key and returns the refund id', async () => {
+  it('refunds the whole order with a key derived from the payment id and returns the refund id', async () => {
     const { gateway, calls } = gatewayAnswering(() =>
       Response.json(orderRefund.response, { status: 201 }),
     );
@@ -429,8 +429,20 @@ describe('MercadoPagoPaymentGateway.refund', () => {
     expect(calls[0]?.init.body).toBeUndefined();
     expect(calls[0]?.init.headers).toMatchObject({
       Authorization: 'Bearer TEST-TOKEN',
-      'X-Idempotency-Key': PAYMENT_ID,
+      'X-Idempotency-Key': `refund-${PAYMENT_ID}`,
     });
+  });
+
+  it('does not reuse the key that created the order, because Mercado Pago keys are account-wide', async () => {
+    const { gateway, calls } = gatewayAnswering(() =>
+      Response.json(orderRefund.response, { status: 201 }),
+    );
+
+    await gateway.refund(refundRequest);
+
+    const headers = calls[0]?.init.headers as Record<string, string>;
+
+    expect(headers['X-Idempotency-Key']).not.toBe(PAYMENT_ID);
   });
 
   it('reads the existing refund when the order is already refunded under another key', async () => {

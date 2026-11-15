@@ -16,6 +16,8 @@ type Input = {
   fetch?: (url: string | URL, init?: RequestInit) => Promise<Response>;
 };
 
+const REFUND_KEY_PREFIX = 'refund-';
+
 const toProviderAmount = (cents: number): string =>
   `${Math.trunc(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 
@@ -163,7 +165,10 @@ export const createMercadoPagoPaymentGateway = ({
       call(
         'refund_order',
         `/v1/orders/${encodeURIComponent(providerPaymentId)}/refund`,
-        { method: 'POST', headers: { 'X-Idempotency-Key': paymentId } },
+        {
+          method: 'POST',
+          headers: { 'X-Idempotency-Key': `${REFUND_KEY_PREFIX}${paymentId}` },
+        },
         (response) =>
           response.ok
             ? readRefund(response, 'refund_order')
