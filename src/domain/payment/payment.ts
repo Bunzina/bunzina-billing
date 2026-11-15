@@ -14,6 +14,8 @@ export type Payment = {
   checkoutUrl?: string;
   method?: string;
   paidAt?: Date;
+  providerRefundId?: string;
+  refundedAt?: Date;
   expiresAt?: Date;
   failureReason?: PaymentFailureReason;
   failureDetail?: string;
@@ -79,6 +81,23 @@ export const confirmPayment = (
   payment: Payment,
   { method, paidAt }: { method: string; paidAt: Date },
 ): Payment => ({ ...payment, status: 'CONFIRMED', method, paidAt });
+
+type RefundInput = { providerRefundId: string; refundedAt: Date };
+
+export const refundPayment = (
+  payment: Payment,
+  { providerRefundId, refundedAt }: RefundInput,
+): Payment => ({
+  ...payment,
+  status: 'REFUNDED',
+  providerRefundId,
+  refundedAt,
+});
+
+export const refundLatePayment = (
+  payment: Payment,
+  { providerRefundId, refundedAt }: RefundInput,
+): Payment => ({ ...payment, providerRefundId, refundedAt });
 
 export const failPayment = (
   payment: Payment,

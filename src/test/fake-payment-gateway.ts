@@ -1,6 +1,7 @@
 import {
   type Checkout,
   type CheckoutRequest,
+  type RefundRequest,
   type PaymentGateway,
   type ProviderOrder,
 } from '@/domain/payment/payment-gateway';
@@ -12,6 +13,8 @@ export const createFakePaymentGateway = () => {
   const references = new Map<string, string>();
   const orders = new Map<string, ProviderOrder>();
   const expired: string[] = [];
+  const refunds: RefundRequest[] = [];
+  const refundFailures: Error[] = [];
   const expirationFailures: Error[] = [];
   let lookupFailure: Error | null = null;
 
@@ -19,6 +22,8 @@ export const createFakePaymentGateway = () => {
     calls: CheckoutRequest[];
     lookups: string[];
     expired: string[];
+    refunds: RefundRequest[];
+    failRefunds: (...errors: Error[]) => void;
     failExpirations: (...errors: Error[]) => void;
     failNext: (...errors: Error[]) => void;
     failLookups: (error: Error | null) => void;
@@ -57,9 +62,21 @@ export const createFakePaymentGateway = () => {
       }
       expired.push(providerPaymentId);
     },
+    async refund(request) {
+      const failure = refundFailures.shift();
+      if (failure) {
+        throw failure;
+      }
+      refunds.push(request);
+      return { providerRefundId: `REFFAKE${refunds.length}` };
+    },
     calls,
     lookups,
     expired,
+    refunds,
+    failRefunds: (...errors) => {
+      refundFailures.push(...errors);
+    },
     failExpirations: (...errors) => {
       expirationFailures.push(...errors);
     },

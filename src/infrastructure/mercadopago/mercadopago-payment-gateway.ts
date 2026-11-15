@@ -2,6 +2,7 @@ import {
   PaymentGatewayError,
   type PaymentGateway,
   type ProviderOrder,
+  type Refund,
 } from '@/domain/payment/payment-gateway';
 import { mercadopagoRequestDurationSeconds } from '@/infrastructure/observability/metrics';
 
@@ -31,7 +32,10 @@ type ProviderOrderBody = {
   status?: unknown;
   status_detail?: unknown;
   last_updated_date?: unknown;
-  transactions?: { payments?: ProviderPayment[] };
+  transactions?: {
+    payments?: ProviderPayment[];
+    refunds?: { id?: unknown }[];
+  };
 };
 
 const invalidResponse = (operation: string) =>
@@ -47,6 +51,22 @@ const methodOf = (payment?: ProviderPayment): string => {
     return 'pix';
   }
   return typeof type === 'string' ? type : 'unknown';
+};
+
+const readRefund = async (
+  response: Response,
+  operation: string,
+): Promise<Refund> => {
+  const body = (await response
+    .json()
+    .catch(() => null)) as ProviderOrderBody | null;
+  const id = body?.transactions?.refunds?.[0]?.id;
+
+  if (typeof id !== 'string' || !id) {
+    throw invalidResponse(operation);
+  }
+
+  return { providerRefundId: id };
 };
 
 const toProviderOrder = (body: ProviderOrderBody): ProviderOrder => {
@@ -134,6 +154,34 @@ export const createMercadoPagoPaymentGateway = ({
             return (
               response.status === 409 &&
               body?.errors?.[0]?.code === 'order_already_canceled'
+            );
+          },
+        },
+      ),
+
+    refund: ({ paymentId, providerPaymentId }) =>
+      call(
+        'refund_order',
+        `/v1/orders/${encodeURIComponent(providerPaymentId)}/refund`,
+        { method: 'POST', headers: { 'X-Idempotency-Key': paymentId } },
+        (response) =>
+          response.ok
+            ? readRefund(response, 'refund_order')
+            : call(
+                'get_order',
+                `/v1/orders/${encodeURIComponent(providerPaymentId)}`,
+                { method: 'GET' },
+                (order) => readRefund(order, 'get_order'),
+              ),
+        {
+          tolerate: async (response) => {
+            const body = (await response.json().catch(() => null)) as {
+              errors?: { code?: unknown }[];
+            } | null;
+
+            return (
+              response.status === 409 &&
+              body?.errors?.[0]?.code === 'order_already_refunded'
             );
           },
         },

@@ -73,6 +73,18 @@ export const paymentsTotal = new Counter({
   registers: [registry],
 });
 
+export const refundsTotal = new Counter({
+  name: 'billing_refunds_total',
+  help: 'Total number of payments refunded because the saga ordered it.',
+  registers: [registry],
+});
+
+export const lateRefundsTotal = new Counter({
+  name: 'billing_late_payments_refunded_total',
+  help: 'Total number of late payments refunded automatically.',
+  registers: [registry],
+});
+
 export const mercadopagoRequestDurationSeconds = new Histogram({
   name: 'billing_mercadopago_request_duration_seconds',
   help: 'Duration of Mercado Pago API calls in seconds, by operation and result.',

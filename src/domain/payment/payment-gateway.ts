@@ -11,6 +11,15 @@ export type Checkout = {
   checkoutUrl: string;
 };
 
+export type RefundRequest = {
+  paymentId: string;
+  providerPaymentId: string;
+};
+
+export type Refund = {
+  providerRefundId: string;
+};
+
 export type ProviderOrder =
   | { state: 'PAID'; method: string; paidAt: Date }
   | { state: 'DECLINED'; detail: string }
@@ -32,4 +41,5 @@ export interface PaymentGateway {
   findPaymentReference(notificationId: string): Promise<string | null>;
   getOrder(providerPaymentId: string): Promise<ProviderOrder>;
   expireCheckout(providerPaymentId: string): Promise<void>;
+  refund(request: RefundRequest): Promise<Refund>;
 }

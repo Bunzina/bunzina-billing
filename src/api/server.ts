@@ -3,6 +3,7 @@ import '@/infrastructure/observability/logger-trace';
 import { createCancelQuoteHandler } from '@/application/quote/cancel-quote';
 import { createChargeHandler } from '@/application/payment/charge-payment';
 import { createExpirePayments } from '@/application/payment/expire-payments';
+import { createRefundHandler } from '@/application/payment/refund-payment';
 import { createHandleNotification } from '@/application/payment/handle-notification';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
 import { parsePaymentValidityMinutes } from '@/domain/payment/payment';
@@ -147,6 +148,7 @@ if (paymentGateway && webhookSecret) {
         events: postgresPaymentEventLog,
         gateway: paymentGateway,
         store: postgresMessageStore,
+        clock,
       }),
     }),
   );
@@ -173,7 +175,7 @@ if (import.meta.main) {
     if (!paymentGateway) {
       logger.warn({
         message:
-          'MP_ACCESS_TOKEN is not set: cmd.billing.charge will be dead-lettered',
+          'MP_ACCESS_TOKEN is not set: cmd.billing.charge and cmd.billing.refund will be dead-lettered',
       });
     }
 
@@ -211,6 +213,12 @@ if (import.meta.main) {
                   process.env.PAYMENT_LINK_VALIDITY_MINUTES,
                 ),
                 retry: PROVIDER_RETRY,
+              }),
+              'cmd.billing.refund': createRefundHandler({
+                payments: postgresPaymentRepository,
+                events: postgresPaymentEventLog,
+                gateway: paymentGateway,
+                clock,
               }),
             }
           : {}),
