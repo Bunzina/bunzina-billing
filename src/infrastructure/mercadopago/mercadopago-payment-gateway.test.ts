@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { PaymentGatewayError } from '@/domain/payment/payment-gateway';
 import { mercadopagoRequestDurationSeconds } from '@/infrastructure/observability/metrics';
+import merchantOrder from '../../../docs/mercadopago/fixtures/merchant-order-get.json';
+import orderPaid from '../../../docs/mercadopago/fixtures/order-get-paid.json';
 import orderCreated from '../../../docs/mercadopago/fixtures/order-create.json';
 import { createMercadoPagoPaymentGateway } from './mercadopago-payment-gateway';
 
@@ -175,5 +177,172 @@ describe('MercadoPagoPaymentGateway.createCheckout', () => {
 
     expect(await histogramCount(success)).toBe(beforeSuccess + 1);
     expect(await histogramCount(failure)).toBe(beforeFailure + 1);
+  });
+});
+
+describe('MercadoPagoPaymentGateway.findPaymentReference', () => {
+  it('reads the external reference of the merchant order the notification points at', async () => {
+    const { gateway, calls } = gatewayAnswering(() =>
+      Response.json(merchantOrder.response),
+    );
+
+    const reference = await gateway.findPaymentReference('46119445524');
+
+    expect(reference).toBe(merchantOrder.response.external_reference);
+    expect(calls[0]?.url).toBe(
+      'https://api.mercadopago.test/merchant_orders/46119445524',
+    );
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(calls[0]?.init.headers).toMatchObject({
+      Authorization: 'Bearer TEST-TOKEN',
+    });
+  });
+
+  it('answers null for a merchant order that has no reference', async () => {
+    const bare = gatewayAnswering(() => Response.json({ id: 1 }));
+
+    expect(await bare.gateway.findPaymentReference('1')).toBeNull();
+  });
+
+  it('treats a merchant order that is not visible yet as retryable, so the notification is not lost', async () => {
+    const unknown = gatewayAnswering(() => new Response(null, { status: 404 }));
+
+    expect(
+      await unknown.gateway.findPaymentReference('1').catch((e) => e),
+    ).toMatchObject({ retryable: true, providerStatus: 'http_404' });
+  });
+
+  it('maps provider failures to gateway errors', async () => {
+    const down = gatewayAnswering(() => new Response(null, { status: 503 }));
+    const refused = gatewayAnswering(() => new Response(null, { status: 401 }));
+    const offline = createMercadoPagoPaymentGateway({
+      accessToken: 'TEST-TOKEN',
+      fetch: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    expect(
+      await down.gateway.findPaymentReference('1').catch((e) => e),
+    ).toMatchObject({
+      retryable: true,
+      providerStatus: 'http_503',
+    });
+    expect(
+      await refused.gateway.findPaymentReference('1').catch((e) => e),
+    ).toMatchObject({
+      retryable: false,
+      providerStatus: 'http_401',
+    });
+    expect(
+      await offline.findPaymentReference('1').catch((e) => e),
+    ).toMatchObject({
+      retryable: true,
+      providerStatus: 'unreachable',
+    });
+  });
+});
+
+describe('MercadoPagoPaymentGateway.getOrder', () => {
+  const withPayment = (payment: Record<string, unknown>, order = {}) => ({
+    ...orderPaid.response,
+    ...order,
+    transactions: {
+      payments: [
+        { ...orderPaid.response.transactions.payments[0], ...payment },
+      ],
+    },
+  });
+
+  it('reads a paid order: the method and the date the order was settled', async () => {
+    const { gateway, calls } = gatewayAnswering(() =>
+      Response.json(orderPaid.response),
+    );
+
+    const order = await gateway.getOrder(orderPaid.response.id);
+
+    expect(order).toEqual({
+      state: 'PAID',
+      method: 'credit_card',
+      paidAt: new Date('2026-11-13T22:09:20.858Z'),
+    });
+    expect(calls[0]?.url).toBe(
+      `https://api.mercadopago.test/v1/orders/${orderPaid.response.id}`,
+    );
+  });
+
+  it('names a PIX payment pix, as the saga contract does', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json(
+        withPayment({ payment_method: { id: 'pix', type: 'bank_transfer' } }),
+      ),
+    );
+
+    expect(await gateway.getOrder('ORD1')).toMatchObject({ method: 'pix' });
+  });
+
+  it('reads an order that was only created as open', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json(orderCreated.response),
+    );
+
+    expect(await gateway.getOrder('ORD1')).toEqual({ state: 'OPEN' });
+  });
+
+  it('reads a declined attempt on an unpaid order, with the provider reason', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json(
+        withPayment(
+          { status: 'failed', status_detail: 'rejected_insufficient_amount' },
+          { status: 'action_required', status_detail: 'waiting_payment' },
+        ),
+      ),
+    );
+
+    expect(await gateway.getOrder('ORD1')).toEqual({
+      state: 'DECLINED',
+      detail: 'rejected_insufficient_amount',
+    });
+  });
+
+  it('does not take a processed order that is not accredited as paid', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json({ ...orderPaid.response, status_detail: 'pending' }),
+    );
+
+    expect(await gateway.getOrder('ORD1')).toEqual({ state: 'OPEN' });
+  });
+
+  it('rejects a paid order without a usable settlement date', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json({ ...orderPaid.response, last_updated_date: 'soon' }),
+    );
+
+    expect(await gateway.getOrder('ORD1').catch((e) => e)).toMatchObject({
+      retryable: false,
+      providerStatus: 'invalid_response',
+    });
+  });
+
+  it('rejects an answer that is not an order and maps provider failures', async () => {
+    const garbage = gatewayAnswering(
+      () => new Response('<html>', { status: 200 }),
+    );
+    const down = gatewayAnswering(() => new Response(null, { status: 500 }));
+    const gone = gatewayAnswering(() => new Response(null, { status: 404 }));
+
+    expect(
+      await garbage.gateway.getOrder('ORD1').catch((e) => e),
+    ).toMatchObject({
+      providerStatus: 'invalid_response',
+    });
+    expect(await down.gateway.getOrder('ORD1').catch((e) => e)).toMatchObject({
+      retryable: true,
+      providerStatus: 'http_500',
+    });
+    expect(await gone.gateway.getOrder('ORD1').catch((e) => e)).toMatchObject({
+      retryable: false,
+      providerStatus: 'http_404',
+    });
   });
 });
