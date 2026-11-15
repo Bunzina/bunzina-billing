@@ -19,7 +19,7 @@ import {
   resetQuoteTables,
 } from '@/test/integration-database';
 import { createFakeMailer } from '@/test/fake-mailer';
-import { postgresPaymentReader } from './postgres-payment-reader';
+import { postgresPaymentRepository } from './postgres-payment-repository';
 import { postgresQuoteRepository } from './postgres-quote-repository';
 
 const NOW = new Date('2026-09-17T14:03:22.115Z');
@@ -248,7 +248,7 @@ describe('quotes against Postgres', () => {
     });
   });
 
-  it('reports a confirmed payment only for a payment in the CONFIRMED status', async () => {
+  it('reads the status of the payment of a quote, locking it', async () => {
     const quote = newQuote(crypto.randomUUID());
 
     await postgresMessageStore.transact((tx) =>
@@ -261,17 +261,17 @@ describe('quotes against Postgres', () => {
 
     expect(
       await postgresMessageStore.transact((tx) =>
-        postgresPaymentReader.hasConfirmedPayment(tx, quote.id),
+        postgresPaymentRepository.findByQuoteIdForUpdate(tx, quote.id),
       ),
-    ).toBe(false);
+    ).toMatchObject({ status: 'PENDING' });
 
     await db`UPDATE bunzina.payments SET status = 'CONFIRMED' WHERE quote_id = ${quote.id}`;
 
     expect(
       await postgresMessageStore.transact((tx) =>
-        postgresPaymentReader.hasConfirmedPayment(tx, quote.id),
+        postgresPaymentRepository.findByQuoteIdForUpdate(tx, quote.id),
       ),
-    ).toBe(true);
+    ).toMatchObject({ status: 'CONFIRMED' });
   });
 
   it('keeps a single quote when two commands for the same service order race', async () => {

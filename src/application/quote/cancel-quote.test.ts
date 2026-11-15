@@ -1,18 +1,56 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import {
+  attachCheckout,
+  createPendingPayment,
+  type Payment,
+} from '@/domain/payment/payment';
+import { PaymentGatewayError } from '@/domain/payment/payment-gateway';
 import { issueQuote, type Quote } from '@/domain/quote/quote';
+import { paymentsTotal } from '@/infrastructure/observability/metrics';
 import { buildCommand, createConsumerHarness } from '@/test/consumer-harness';
 import { createInMemoryMessageStore } from '@/test/in-memory-message-store';
-import { createInMemoryPaymentReader } from '@/test/in-memory-payment-reader';
+import { createInMemoryPaymentEventLog } from '@/test/in-memory-payment-event-log';
+import { createInMemoryPaymentRepository } from '@/test/in-memory-payment-repository';
+import { createFakePaymentGateway } from '@/test/fake-payment-gateway';
 import { createInMemoryQuoteRepository } from '@/test/in-memory-quote-repository';
 import { createCancelQuoteHandler } from './cancel-quote';
 
 const NOW = new Date('2026-09-17T15:00:00.000Z');
 
 let quotes: ReturnType<typeof createInMemoryQuoteRepository>;
-let payments: ReturnType<typeof createInMemoryPaymentReader>;
+let payments: ReturnType<typeof createInMemoryPaymentRepository>;
+let events: ReturnType<typeof createInMemoryPaymentEventLog>;
+let gateway: ReturnType<typeof createFakePaymentGateway>;
 let database: ReturnType<typeof createInMemoryMessageStore>;
 let harness: Awaited<ReturnType<typeof createConsumerHarness>>;
 let quote: Quote;
+
+const counterValue = async (status: string) => {
+  const { values } = await paymentsTotal.get();
+
+  return values.find((entry) => entry.labels.status === status)?.value ?? 0;
+};
+
+const storePayment = (overrides: Partial<Payment> = {}): Payment => {
+  const payment = {
+    ...attachCheckout(
+      createPendingPayment({
+        quoteId: quote.id,
+        serviceOrderId: quote.serviceOrderId,
+        amountCents: quote.totalCents,
+        currency: quote.currency,
+        now: NOW,
+        validityMinutes: 30,
+      }),
+      { providerPaymentId: 'ORDTST01', checkoutUrl: 'https://checkout.fake/1' },
+    ),
+    ...overrides,
+  };
+
+  payments.save(payment);
+
+  return payment;
+};
 
 const cancelCommand = (overrides: Record<string, unknown> = {}) =>
   buildCommand({
@@ -29,13 +67,17 @@ const cancelCommand = (overrides: Record<string, unknown> = {}) =>
 
 beforeEach(async () => {
   quotes = createInMemoryQuoteRepository();
-  payments = createInMemoryPaymentReader();
+  payments = createInMemoryPaymentRepository();
+  events = createInMemoryPaymentEventLog();
+  gateway = createFakePaymentGateway();
   database = createInMemoryMessageStore();
   harness = await createConsumerHarness(
     {
       'cmd.billing.cancel-quote': createCancelQuoteHandler({
         quotes,
         payments,
+        events,
+        gateway,
         clock: () => NOW,
       }),
     },
@@ -135,7 +177,7 @@ describe('cmd.billing.cancel-quote', () => {
 
   it('sends the command to the DLQ when the payment is already confirmed, leaving the quote untouched', async () => {
     quotes.save({ ...quote, status: 'APPROVED' });
-    payments.confirm(quote.id);
+    storePayment({ status: 'CONFIRMED' });
 
     await harness.deliver(cancelCommand());
 
@@ -179,4 +221,104 @@ describe('cmd.billing.cancel-quote', () => {
       expect(database.outboxEvents()).toHaveLength(0);
     },
   );
+
+  describe('with a payment still pending', () => {
+    beforeEach(() => {
+      quotes.save({ ...quote, status: 'APPROVED' });
+    });
+
+    it('fails the payment with TIMEOUT, expires the checkout, and publishes only quote-canceled', async () => {
+      const payment = storePayment();
+      const before = await counterValue('FAILED');
+
+      await harness.deliver(cancelCommand());
+
+      expect(harness.ack).toHaveBeenCalledTimes(1);
+      expect((await quotes.findById(quote.id))?.status).toBe('CANCELED');
+      expect(await payments.findById(payment.id)).toMatchObject({
+        status: 'FAILED',
+        failureReason: 'TIMEOUT',
+      });
+      expect(gateway.expired).toEqual(['ORDTST01']);
+      expect(database.outboxEvents()).toMatchObject([
+        { eventType: 'evt.billing.quote-canceled' },
+      ]);
+      expect(events.all()).toMatchObject([
+        { paymentId: payment.id, type: 'payment-canceled' },
+      ]);
+      expect(await counterValue('FAILED')).toBe(before + 1);
+    });
+
+    it('still cancels the quote when the checkout cannot be expired, and records the failure', async () => {
+      const payment = storePayment();
+      gateway.failExpirations(
+        new PaymentGatewayError('mercadopago cancel failed', true, 'http_503'),
+      );
+
+      await harness.deliver(cancelCommand());
+
+      expect(harness.ack).toHaveBeenCalledTimes(1);
+      expect((await quotes.findById(quote.id))?.status).toBe('CANCELED');
+      expect((await payments.findById(payment.id))?.status).toBe('FAILED');
+      expect(events.all()).toMatchObject([
+        { type: 'payment-canceled' },
+        {
+          paymentId: payment.id,
+          type: 'checkout-expiry-failed',
+          payload: { providerPaymentId: 'ORDTST01' },
+        },
+      ]);
+    });
+
+    it('still cancels the quote when no payment gateway is configured', async () => {
+      const payment = storePayment();
+      const unconfigured = await createConsumerHarness(
+        {
+          'cmd.billing.cancel-quote': createCancelQuoteHandler({
+            quotes,
+            payments,
+            events,
+            gateway: undefined,
+            clock: () => NOW,
+          }),
+        },
+        database.store,
+      );
+
+      await unconfigured.deliver(cancelCommand());
+
+      expect(unconfigured.ack).toHaveBeenCalledTimes(1);
+      expect((await quotes.findById(quote.id))?.status).toBe('CANCELED');
+      expect((await payments.findById(payment.id))?.status).toBe('FAILED');
+      expect(events.all().map((event) => event.type)).toEqual([
+        'payment-canceled',
+        'checkout-expiry-failed',
+      ]);
+    });
+
+    it.each(['FAILED', 'REFUNDED'] as const)(
+      'leaves a %s payment as it is and does not touch the provider',
+      async (status) => {
+        const payment = storePayment({ status });
+
+        await harness.deliver(cancelCommand());
+
+        expect((await quotes.findById(quote.id))?.status).toBe('CANCELED');
+        expect((await payments.findById(payment.id))?.status).toBe(status);
+        expect(gateway.expired).toHaveLength(0);
+        expect(events.all()).toHaveLength(0);
+      },
+    );
+
+    it('does nothing new to the payment when the same command is redelivered', async () => {
+      storePayment();
+      const command = cancelCommand();
+
+      await harness.deliver(command);
+      await harness.deliver(command);
+
+      expect(gateway.expired).toHaveLength(1);
+      expect(events.all()).toHaveLength(1);
+    });
+  });
 });

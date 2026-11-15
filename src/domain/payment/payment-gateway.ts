@@ -31,4 +31,5 @@ export interface PaymentGateway {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
   findPaymentReference(notificationId: string): Promise<string | null>;
   getOrder(providerPaymentId: string): Promise<ProviderOrder>;
+  expireCheckout(providerPaymentId: string): Promise<void>;
 }

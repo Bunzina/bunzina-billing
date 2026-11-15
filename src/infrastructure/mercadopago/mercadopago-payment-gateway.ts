@@ -75,7 +75,13 @@ export const createMercadoPagoPaymentGateway = ({
     path: string,
     init: RequestInit,
     parse: (response: Response) => Promise<T>,
-    { retryNotFound = false } = {},
+    {
+      retryNotFound = false,
+      tolerate,
+    }: {
+      retryNotFound?: boolean;
+      tolerate?: (response: Response) => Promise<boolean>;
+    } = {},
   ): Promise<T> => {
     const stopTimer = mercadopagoRequestDurationSeconds.startTimer({
       operation,
@@ -92,7 +98,7 @@ export const createMercadoPagoPaymentGateway = ({
           'unreachable',
         );
       });
-      if (!response.ok) {
+      if (!response.ok && !(await tolerate?.(response))) {
         throw new PaymentGatewayError(
           `mercadopago ${operation} answered ${response.status}`,
           isRetryableStatus(response.status) ||
@@ -110,6 +116,29 @@ export const createMercadoPagoPaymentGateway = ({
   };
 
   return {
+    expireCheckout: (providerPaymentId) =>
+      call(
+        'cancel_order',
+        `/v1/orders/${encodeURIComponent(providerPaymentId)}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+        },
+        async () => undefined,
+        {
+          tolerate: async (response) => {
+            const body = (await response.json().catch(() => null)) as {
+              errors?: { code?: unknown }[];
+            } | null;
+
+            return (
+              response.status === 409 &&
+              body?.errors?.[0]?.code === 'order_already_canceled'
+            );
+          },
+        },
+      ),
+
     findPaymentReference: (notificationId) =>
       call(
         'get_merchant_order',

@@ -96,6 +96,7 @@ describe('GET /quotes/:id', () => {
           amountCents: quote.totalCents,
           currency: 'BRL',
           now: NOW,
+          validityMinutes: 30,
         }),
         {
           providerPaymentId: 'ORDTST1',
@@ -122,6 +123,7 @@ describe('GET /quotes/:id', () => {
         amountCents: quote.totalCents,
         currency: 'BRL',
         now: NOW,
+        validityMinutes: 30,
       }),
       status: 'FAILED',
       failureReason: 'PROVIDER_ERROR',

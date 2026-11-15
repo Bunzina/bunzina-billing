@@ -299,6 +299,33 @@ describe('cmd.billing.charge', () => {
       });
     });
 
+    it('never charges again once the payment expired, only repeats payment-failed with EXPIRED', async () => {
+      await harness.deliver(charge());
+      const [pending] = payments.all();
+      payments.save({
+        ...pending!,
+        status: 'FAILED',
+        failureReason: 'EXPIRED',
+        failureDetail: 'expired',
+      });
+
+      await harness.deliver(charge());
+
+      expect(gateway.calls).toHaveLength(1);
+      expect(payments.all()).toHaveLength(1);
+      expect(database.outboxEvents()).toMatchObject([
+        {
+          eventType: 'evt.billing.payment-failed',
+          data: {
+            paymentId: pending?.id,
+            reason: 'EXPIRED',
+            detail: 'The payment was not made before the checkout expired',
+            providerStatus: 'expired',
+          },
+        },
+      ]);
+    });
+
     it('counts the failed payment by status', async () => {
       gateway.failNext(transient(), transient(), transient());
       const before = await counterValue(paymentsTotal, { status: 'FAILED' });

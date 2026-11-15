@@ -2,6 +2,7 @@ import '@/infrastructure/observability/logger-trace';
 
 import { createCancelQuoteHandler } from '@/application/quote/cancel-quote';
 import { createChargeHandler } from '@/application/payment/charge-payment';
+import { createExpirePayments } from '@/application/payment/expire-payments';
 import { createHandleNotification } from '@/application/payment/handle-notification';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
 import { parsePaymentValidityMinutes } from '@/domain/payment/payment';
@@ -14,10 +15,10 @@ import {
 import { createNodemailerPaymentMailer } from '@/infrastructure/email/nodemailer-payment-mailer';
 import { createNodemailerQuoteMailer } from '@/infrastructure/email/nodemailer-quote-mailer';
 import { createMercadoPagoPaymentGateway } from '@/infrastructure/mercadopago/mercadopago-payment-gateway';
+import { startPeriodicJob } from '@/infrastructure/jobs/periodic-job';
 import { startConsumer } from '@/infrastructure/messaging/consumer';
 import { postgresMessageStore } from '@/infrastructure/messaging/message-store';
 import { postgresPaymentEventLog } from '@/infrastructure/persistence/postgres-payment-event-log';
-import { postgresPaymentReader } from '@/infrastructure/persistence/postgres-payment-reader';
 import { postgresPaymentRepository } from '@/infrastructure/persistence/postgres-payment-repository';
 import { postgresQuoteRepository } from '@/infrastructure/persistence/postgres-quote-repository';
 import { quoteRoutes } from './quote-routes';
@@ -114,6 +115,8 @@ async function checkDependencies(): Promise<void> {
 
 const clock = () => new Date();
 
+const PAYMENT_EXPIRATION_INTERVAL_MS = 30_000;
+
 const PROVIDER_RETRY = {
   maxAttempts: 3,
   baseDelayMs: 500,
@@ -131,17 +134,18 @@ app.use(
 );
 
 const mercadopagoToken = process.env.MP_ACCESS_TOKEN;
+const paymentGateway = mercadopagoToken
+  ? createMercadoPagoPaymentGateway({ accessToken: mercadopagoToken })
+  : undefined;
 const webhookSecret = process.env.MP_WEBHOOK_SECRET;
-if (mercadopagoToken && webhookSecret) {
+if (paymentGateway && webhookSecret) {
   app.use(
     webhookRoutes({
       secret: webhookSecret,
       handleNotification: createHandleNotification({
         payments: postgresPaymentRepository,
         events: postgresPaymentEventLog,
-        gateway: createMercadoPagoPaymentGateway({
-          accessToken: mercadopagoToken,
-        }),
+        gateway: paymentGateway,
         store: postgresMessageStore,
       }),
     }),
@@ -166,9 +170,7 @@ if (import.meta.main) {
   });
 
   if (process.env.RABBITMQ_URL) {
-    const mercadopagoToken = process.env.MP_ACCESS_TOKEN;
-
-    if (!mercadopagoToken) {
+    if (!paymentGateway) {
       logger.warn({
         message:
           'MP_ACCESS_TOKEN is not set: cmd.billing.charge will be dead-lettered',
@@ -189,17 +191,17 @@ if (import.meta.main) {
         }),
         'cmd.billing.cancel-quote': createCancelQuoteHandler({
           quotes: postgresQuoteRepository,
-          payments: postgresPaymentReader,
+          payments: postgresPaymentRepository,
+          events: postgresPaymentEventLog,
+          gateway: paymentGateway,
           clock,
         }),
-        ...(mercadopagoToken
+        ...(paymentGateway
           ? {
               'cmd.billing.charge': createChargeHandler({
                 quotes: postgresQuoteRepository,
                 payments: postgresPaymentRepository,
-                gateway: createMercadoPagoPaymentGateway({
-                  accessToken: mercadopagoToken,
-                }),
+                gateway: paymentGateway,
                 mailer: createNodemailerPaymentMailer({
                   transporter: emailTransporter,
                   from: DEFAULT_EMAIL,
@@ -222,9 +224,22 @@ if (import.meta.main) {
     });
 
     const relay = startRelay();
+    const expiration = startPeriodicJob({
+      name: 'payment expiration',
+      intervalMs: PAYMENT_EXPIRATION_INTERVAL_MS,
+      run: createExpirePayments({
+        payments: postgresPaymentRepository,
+        events: postgresPaymentEventLog,
+        gateway: paymentGateway,
+        store: postgresMessageStore,
+        clock,
+      }),
+    });
 
     process.once('SIGTERM', () => {
-      void relay.stop().then(() => process.exit(0));
+      void Promise.all([relay.stop(), expiration.stop()]).then(() =>
+        process.exit(0),
+      );
     });
   }
 }

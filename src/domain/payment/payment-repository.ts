@@ -7,4 +7,6 @@ export interface PaymentRepository {
   findByQuoteIdForUpdate(tx: Tx, quoteId: string): Promise<Payment | null>;
   insert(tx: Tx, payment: Payment): Promise<void>;
   confirmIfPending(tx: Tx, confirmed: Payment): Promise<boolean>;
+  failIfPending(tx: Tx, failed: Payment): Promise<boolean>;
+  claimExpired(tx: Tx, now: Date, limit: number): Promise<Payment[]>;
 }

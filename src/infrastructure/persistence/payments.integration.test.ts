@@ -118,6 +118,7 @@ const newPayment = (quote: Quote) =>
       amountCents: quote.totalCents,
       currency: quote.currency,
       now: NOW,
+      validityMinutes: 30,
     }),
     {
       providerPaymentId: `ORD${crypto.randomUUID()}`,

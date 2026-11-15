@@ -3,6 +3,8 @@ import { PaymentGatewayError } from '@/domain/payment/payment-gateway';
 import { mercadopagoRequestDurationSeconds } from '@/infrastructure/observability/metrics';
 import merchantOrder from '../../../docs/mercadopago/fixtures/merchant-order-get.json';
 import orderPaid from '../../../docs/mercadopago/fixtures/order-get-paid.json';
+import orderCancel from '../../../docs/mercadopago/fixtures/order-cancel.json';
+import orderAlreadyCanceled from '../../../docs/mercadopago/fixtures/order-cancel-already-canceled.json';
 import orderCreated from '../../../docs/mercadopago/fixtures/order-create.json';
 import { createMercadoPagoPaymentGateway } from './mercadopago-payment-gateway';
 
@@ -343,6 +345,60 @@ describe('MercadoPagoPaymentGateway.getOrder', () => {
     expect(await gone.gateway.getOrder('ORD1').catch((e) => e)).toMatchObject({
       retryable: false,
       providerStatus: 'http_404',
+    });
+  });
+});
+
+describe('MercadoPagoPaymentGateway.expireCheckout', () => {
+  it('cancels the unpaid order by its id', async () => {
+    const { gateway, calls } = gatewayAnswering(() =>
+      Response.json(orderCancel.response, { status: 200 }),
+    );
+
+    await gateway.expireCheckout('ORDTST01');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(
+      'https://api.mercadopago.test/v1/orders/ORDTST01/cancel',
+    );
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[0]?.init.headers).toMatchObject({
+      Authorization: 'Bearer TEST-TOKEN',
+      'X-Idempotency-Key': expect.any(String),
+    });
+  });
+
+  it('takes an order that is already canceled as expired', async () => {
+    const { gateway } = gatewayAnswering(() =>
+      Response.json(orderAlreadyCanceled.response, { status: 409 }),
+    );
+
+    await expect(gateway.expireCheckout('ORDTST01')).resolves.toBeUndefined();
+  });
+
+  it.each([
+    [
+      'another 409',
+      409,
+      { errors: [{ code: 'order_already_processed' }] },
+      false,
+    ],
+    ['a 409 without a body', 409, null, false],
+    ['a 404', 404, {}, false],
+    ['a 503', 503, {}, true],
+  ])('fails on %s', async (_label, status, body, retryable) => {
+    const { gateway } = gatewayAnswering(() =>
+      body === null
+        ? new Response('not json', { status })
+        : Response.json(body, { status }),
+    );
+
+    const error = await gateway.expireCheckout('ORDTST01').catch((e) => e);
+
+    expect(error).toBeInstanceOf(PaymentGatewayError);
+    expect(error).toMatchObject({
+      retryable,
+      providerStatus: `http_${status}`,
     });
   });
 });

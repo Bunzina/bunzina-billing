@@ -1,6 +1,6 @@
 export type PaymentStatus = 'PENDING' | 'CONFIRMED' | 'FAILED' | 'REFUNDED';
 
-export type PaymentFailureReason = 'PROVIDER_ERROR';
+export type PaymentFailureReason = 'PROVIDER_ERROR' | 'EXPIRED' | 'TIMEOUT';
 
 export type Payment = {
   id: string;
@@ -14,6 +14,7 @@ export type Payment = {
   checkoutUrl?: string;
   method?: string;
   paidAt?: Date;
+  expiresAt?: Date;
   failureReason?: PaymentFailureReason;
   failureDetail?: string;
   createdAt: Date;
@@ -25,7 +26,10 @@ type CreateInput = {
   amountCents: number;
   currency: string;
   now: Date;
+  validityMinutes: number;
 };
+
+const MINUTE_MS = 60 * 1000;
 
 const paymentIdFor = (quoteId: string): string => {
   const bytes = new Bun.CryptoHasher('sha1')
@@ -47,6 +51,7 @@ export const createPendingPayment = ({
   amountCents,
   currency,
   now,
+  validityMinutes,
 }: CreateInput): Payment => ({
   id: paymentIdFor(quoteId),
   quoteId,
@@ -55,6 +60,7 @@ export const createPendingPayment = ({
   amountCents,
   currency,
   provider: 'mercadopago',
+  expiresAt: new Date(now.getTime() + validityMinutes * MINUTE_MS),
   createdAt: now,
 });
 
