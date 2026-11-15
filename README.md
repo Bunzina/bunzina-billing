@@ -1,55 +1,151 @@
-# Template de microsserviço — Fase 4
+# bunzina-billing
 
-Base para o `bunzina-os`, o `bunzina-billing` e o `bunzina-workshop`. Reúne o que
-os três precisam ter igual: pipeline, gate de cobertura, chart, bootstrap de
-observabilidade e o cliente de mensageria com propagação de trace.
+Microsserviço de **Orçamento e Pagamento** do Bunzina (Fase 4 do Tech Challenge). É dono do
+**Orçamento** e do **Pagamento**: emite o orçamento pós-diagnóstico, registra a aprovação do
+cliente, cobra pelo Mercado Pago (Checkout Pro, sandbox) e estorna quando a oficina falha
+depois do pagamento. Vocabulário em [GLOSSARY.md](GLOSSARY.md).
 
-Derivado do `bunzina`: o workflow de deploy veio do `.github/workflows/deploy-k8s.yml`,
-o chart do `charts/bunzina-chart` e o `tracing.ts` do `src/infrastructure/observability`.
+O serviço participa da saga orquestrada pelo [`bunzina-os`](https://github.com/Bunzina/bunzina-os):
+obedece a quatro comandos e publica sete eventos, todos do
+[contrato congelado](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md).
 
-## Como usar
+## Arquitetura
 
-```bash
-./scripts/init-service.sh bunzina-os ../../bunzina-os
-cd ../../bunzina-os && bun install && bun test
+```mermaid
+flowchart LR
+    OS[bunzina-os<br/>orquestrador] -- "cmd.billing.*" --> MQ[(RabbitMQ<br/>bunzina-billing.inbox)]
+    MQ --> Consumer
+    subgraph Billing
+        Consumer[Consumer<br/>retry + DLQ]
+        API[API HTTP<br/>Elysia]
+        App[Casos de uso<br/>application/]
+        Dom[Domínio<br/>Quote, Payment]
+        Outbox[(outbox_messages)]
+        Relay[Relay do outbox<br/>polling 1s]
+        Job[Job de expiração<br/>de pagamentos]
+        Consumer --> App
+        API --> App
+        Job --> App
+        App --> Dom
+        App --> PG[(PostgreSQL<br/>quotes, payments,<br/>payment_events,<br/>processed_events)]
+        App --> Outbox
+        Outbox --> Relay
+    end
+    Relay -- "evt.billing.*" --> MQ2[(RabbitMQ<br/>bunzina.events)]
+    MQ2 --> OS
+    Cliente -- "GET/POST /quotes" --> API
+    MP[Mercado Pago] -- "POST /webhooks/mercadopago" --> API
+    App -- "Orders API (HTTP)" --> MP
+    App -- SMTP --> Email[Cliente<br/>e-mail]
 ```
 
-O script copia a pasta, renomeia o chart e substitui dois placeholders:
+Clean Architecture em `src/`:
 
-| Placeholder | Vira | Onde aparece |
+| Pasta | Conteúdo |
+| --- | --- |
+| `domain/` | `Quote` e `Payment` com as regras (total, validade, transições), e as portas: repositórios, `PaymentGateway`, mailers e o registro de eventos. Sem I/O |
+| `application/` | Um caso de uso por comando ou rota: emitir, aprovar/recusar, cancelar, cobrar, tratar notificação, expirar pagamentos e estornar |
+| `api/` | Rotas Elysia (`/quotes`, `/webhooks/mercadopago`), a documentação OpenAPI e o `server.ts`, que monta tudo |
+| `infrastructure/` | Postgres (`persistence/`, `message-store.ts`), RabbitMQ (`messaging/`), Mercado Pago por HTTP direto (`mercadopago/`), SMTP, jobs periódicos e observabilidade |
+| `test/` | Repositórios em memória, gateway e mailers falsos: as regras rodam sem rede nem banco |
+
+Decisões que moldam o serviço:
+
+- **Banco próprio** (PostgreSQL, schema `bunzina`): `quotes`, `payments`, `payment_events`,
+  `processed_events` e `outbox_messages`. Diagrama ER no repositório `bunzina`:
+  [er-billing.md](https://github.com/Bunzina/bunzina/blob/main/docs/arch/diagrams/er-billing.md).
+- **Outbox transacional.** Todo evento de saída é gravado na mesma transação da escrita de
+  negócio e publicado por um relay com `FOR UPDATE SKIP LOCKED`, seguro com 2+ réplicas.
+- **Idempotência.** O consumer grava `processed_events` na transação do handler; o webhook,
+  que não tem `eventId`, usa atualização condicional (`status = 'PENDING'`).
+- **Pagamento por Orders API do Mercado Pago**, sem SDK:
+  [ADR 0002](docs/adr/0002-checkout-pro-via-orders-api.md). Falha de pagamento e pagamento
+  tardio: [ADR 0001](docs/adr/0001-payment-failure-and-late-payment.md).
+- **Webhook público pelo ALB** do cluster (Ingress `alb`, `internet-facing`). O endereço é a
+  configuração `PUBLIC_BASE_URL`, então trocar por um túnel não muda código.
+
+### Mensagens
+
+| Comando consumido | Eventos publicados |
+| --- | --- |
+| `cmd.billing.issue-quote` | `evt.billing.quote-issued` |
+| `cmd.billing.cancel-quote` | `evt.billing.quote-canceled` |
+| `cmd.billing.charge` | `evt.billing.payment-failed` (erro do provedor) |
+| `cmd.billing.refund` | `evt.billing.payment-refunded` |
+| rota `POST /quotes/:id/approval` | `evt.billing.quote-approved`, `evt.billing.quote-rejected` |
+| webhook e job de expiração | `evt.billing.payment-confirmed`, `evt.billing.payment-failed` (expiração) |
+
+## API HTTP e Swagger
+
+| Rota | Uso |
+| --- | --- |
+| `GET /quotes/:id` | Consulta o orçamento; documento do cliente no header `X-Customer-Document` |
+| `POST /quotes/:id/approval` | Aprova ou recusa; corpo `{ "document", "decision": "APPROVED" \| "REJECTED" }` |
+| `POST /webhooks/mercadopago` | Notificação do Mercado Pago, protegida pela assinatura `x-signature` |
+| `GET /health`, `/ready`, `/metrics` | Probes e métricas Prometheus |
+
+O **Swagger** fica em `/swagger` (o `/` redireciona para ele) e o JSON OpenAPI em
+`/swagger/json`:
+
+- local: <http://localhost:3000/swagger>
+- cluster: `http://<host do ALB>/swagger`; o host sai de `kubectl get ingress -n bunzina`.
+
+A **collection do Bruno** está em [`bruno/`](bruno/): abra a pasta no Bruno, escolha o
+ambiente `Local` e preencha `quoteId` (vem do `evt.billing.quote-issued`) e, para o webhook,
+`merchantOrderId` e o segredo `webhookSecret` (o mesmo `MP_WEBHOOK_SECRET`; o script do
+request assina a notificação). Tem as três rotas de negócio.
+
+## Como executar
+
+Requisitos: [Bun](https://bun.sh) e Docker.
+
+```bash
+bun install
+docker compose up -d db rabbitmq            # Postgres (5432) e RabbitMQ (5672, painel em 15672)
+docker compose run --rm app bun run migration   # aplica as migrations pendentes
+docker compose up                           # a API em http://localhost:3000, com hot reload
+```
+
+Sem `MP_ACCESS_TOKEN` e `MP_WEBHOOK_SECRET` (o `docker compose` os lê do ambiente ou do
+`.env`) a API sobe, mas o webhook não é servido e `cmd.billing.charge` e
+`cmd.billing.refund` vão para a DLQ. Variáveis na seção [Configuração](#configuração).
+
+```bash
+bun test                    # unitários, em memória
+bun run test:ci             # o mesmo com o gate de cobertura que o CI executa
+bun run test:integration    # sobe um Postgres descartável (db-test, 5433) e roda a suíte contra ele
+bun run lint && bun run fmt:check
+```
+
+## Testes e cobertura
+
+O serviço tem dois níveis de teste, ambos pelas portas de entrada (HTTP e mensageria), nunca
+por detalhe interno:
+
+- **Unitários** com repositórios em memória e fakes de gateway, e-mail e relógio. É o que o
+  gate de cobertura mede.
+- **Integração** contra Postgres real (transação com `processed_events`, outbox e relay com
+  duas instâncias, índices únicos). Rodam no job `test/integration` do CI, fora do gate; o
+  `lcov` deles segue para o SonarCloud junto com o dos unitários.
+
+**Evidência de cobertura** (`bun run test:ci`, 240 testes passando):
+
+| Dimensão | Resultado | Mínimo exigido |
 | --- | --- | --- |
-| `bunzina-billing` | `bunzina-os` | package.json, chart, workflows, compose, Sonar |
-| `bunzina_billing` | `bunzina_os` | nomes das métricas Prometheus |
+| Linhas | 99,37% | 80% |
+| Funções | 99,26% | 80% |
 
-O `__AWS_ACCOUNT_ID__` **não** é substituído pelo script. Ele é injetado pelo
-workflow de deploy a partir do secret, como já acontece no `bunzina`.
+O `bunfig.ci.toml` fixa `coverageThreshold` de 80% em linhas, funções, statements e
+branches, e o Bun reprova o job se algum limite não for atingido. O relatório de texto do Bun
+só imprime linhas e funções. O `message-store.ts` e os repositórios `postgres-*.ts`, que são só SQL,
+ficam fora do gate unitário (o Bun mede o limite por arquivo) e são medidos pela integração.
+O CI publica o `coverage/lcov.info` no SonarCloud (`Bunzina_bunzina-billing`), e o
+quality gate é um check obrigatório do PR.
 
-## O que vem pronto
-
-**Gate de cobertura ligado.** O `bunfig.ci.toml` tem `coverage = true` e
-`coverageThreshold` de 80% nas quatro dimensões. É o que o CI executa, então
-cobertura abaixo disso reprova o PR. Esta é a correção do problema que o `bunzina`
-tinha: lá o arquivo de CI vinha com `coverage = false` e o gate não existia na
-prática.
-
-**Dois workflows.** O `ci.yml` roda em PR — lint, formato, testes com cobertura e
-scan do SonarCloud. O `deploy-k8s.yml` roda no push para `main` — testes,
-migrations por port-forward, build e push no ECR, e `helm upgrade --install`.
-
-**Chart umbrella** consumindo o `app-chart` do `bunzina-chart` por OCI, com HPA,
-ServiceMonitor, probes e o Postgres próprio do serviço
-([ADR 0012](../../docs/arch/adrs/0012-microservices-split.md)). O `bunzina-workshop`
-desliga o `database` e aponta para o MongoDB Atlas
-([ADR 0014](../../docs/arch/adrs/0014-mongodb-workshop.md)).
-
-**RabbitMQ no `docker-compose`**, o mesmo broker que roda no cluster. A paridade é
-o que permite ensaiar falha e compensação antes de gravar
-([ADR 0015](../../docs/arch/adrs/0015-rabbitmq-broker.md)).
-
-## `src/infrastructure/messaging`
+## Mensageria (`src/infrastructure/messaging`)
 
 A parte que precisa ser **idêntica** nos quatro serviços, e que a
-[ADR 0016](../../docs/arch/adrs/0016-code-reuse-between-services.md) marca para virar
+[ADR 0016](https://github.com/Bunzina/bunzina/blob/main/docs/arch/adrs/0016-code-reuse-between-services.md) marca para virar
 pacote npm. Enquanto o pacote não existe, ela vive aqui.
 
 | Arquivo | Responsabilidade |
@@ -62,9 +158,9 @@ pacote npm. Enquanto o pacote não existe, ela vive aqui.
 | `outbox-relay.ts` | Publica o outbox por polling de 1s em lotes com `FOR UPDATE SKIP LOCKED`, esperando o confirm do broker |
 
 O contrato completo está em
-[docs/contracts/events-saga-contracts.md](../../docs/contracts/events-saga-contracts.md).
+[docs/contracts/events-saga-contracts.md](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md).
 
-### O que cada serviço precisa implementar
+### Como o handler de uma mensagem funciona
 
 O handler de cada mensagem recebe `{ envelope, tx, emit }`. A guarda de idempotência
 grava em `processed_events` **na mesma transação** da escrita de negócio, e o `emit`
@@ -84,13 +180,11 @@ SonarCloud junto com o dos unitários. O `message-store.ts`, que é só SQL, fic
 gate unitário (o Bun mede o limite de 80% por arquivo) e é medido apenas pela
 integração.
 
-No Postgres é chave primária composta `(event_id, consumer)`. No MongoDB do
-`bunzina-workshop` é índice único em `{ eventId, consumer }`.
+`processed_events` tem chave primária composta `(event_id, consumer)`.
 
-O `/ready` do `server.ts` também fica em aberto: cada serviço troca o
-`checkDependencies` pela checagem do seu próprio banco.
+## Comportamento por fluxo
 
-## Emissão do orçamento
+### Emissão do orçamento
 
 O orquestrador manda `cmd.billing.issue-quote` com os itens diagnosticados. O Billing
 calcula o total (serviços + peças, `quantidade × preço unitário`, em centavos), fixa os
@@ -169,7 +263,7 @@ Métricas: `billing_payments_total{status}`, `billing_late_payments_refunded_tot
 `get_merchant_order`, `get_order`, `cancel_order` ou `refund_order`; `result` é `success` ou
 `error`).
 
-## Estorno (`cmd.billing.refund`)
+### Estorno (`cmd.billing.refund`)
 
 O orquestrador manda estornar um Pagamento `CONFIRMED` (`serviceOrderId`, `paymentId`,
 `amountCents`, `currency`, `reason`). O Billing estorna o valor integral em
@@ -188,6 +282,8 @@ Pagamento como `REFUNDED` com `provider_refund_id` e `refunded_at`, registra
   adaptador lê o estorno existente na order.
 
 Métrica: `billing_refunds_total` (estornos mandados pela saga; os tardios têm a sua própria).
+
+## Configuração
 
 | Variável | Padrão | Uso |
 | --- | --- | --- |
@@ -210,18 +306,11 @@ deploy só injeta cada um quando está preenchido.
 
 O SMTP usa TLS implícito só na porta 465; nas demais, STARTTLS quando o servidor oferece.
 
-Métrica: `billing_quotes_total{status}`.
+## Métricas e alerta
+
+Orçamentos: `billing_quotes_total{status}`. Pagamentos, estornos e latência do Mercado Pago estão nas seções de cada fluxo.
 
 Alerta: o chart publica `templates/grafana-alerts.yaml`, um ConfigMap com o label
 `grafana_alert: "1"` que dispara quando alguma mensagem vai para a DLQ
 (`bunzina_billing_messages_consumed_total{result=~"invalid|failure|unhandled"}`). Ele só
 chega ao Grafana se o release `bunzina-observability` tiver `grafana.sidecar.alerts.enabled`.
-
-## Checklist do repositório novo
-
-- [ ] Criar `Bunzina/<serviço>` e exigir PR na `main`
-- [ ] Checks obrigatórios: `lint-format/check`, `test/coverage` e o quality gate do Sonar
-- [ ] Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
-      `AWS_ACCOUNT_ID`, `DB_USER`, `DB_PASSWORD`, `RABBITMQ_URL`, `SONAR_TOKEN`
-- [ ] Projeto no SonarCloud com a key `Bunzina_<serviço>`
-- [ ] README com arquitetura, execução, link do Swagger e evidência de cobertura

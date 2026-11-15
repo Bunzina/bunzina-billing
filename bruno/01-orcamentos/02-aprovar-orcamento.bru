@@ -1,0 +1,32 @@
+meta {
+  name: Aprovar orçamento
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/quotes/{{quoteId}}/approval
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "document": "{{customerDocument}}",
+    "decision": "APPROVED"
+  }
+}
+
+docs {
+  Aprova o orçamento e publica `evt.billing.quote-approved`. Documento divergente responde
+  404; orçamento que já não está emitido, ou vencido, responde 409.
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq APPROVED
+}

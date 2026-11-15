@@ -1,0 +1,49 @@
+meta {
+  name: Webhook Mercado Pago
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/webhooks/mercadopago?data_id={{merchantOrderId}}&type=topic_merchant_order_wh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "action": "update",
+    "status": "closed"
+  }
+}
+
+script:pre-request {
+  const crypto = require("crypto");
+  const requestId = crypto.randomUUID();
+  const ts = String(Math.floor(Date.now() / 1000));
+  const id = String(bru.getEnvVar("merchantOrderId") || "").toLowerCase();
+  const v1 = crypto
+    .createHmac("sha256", bru.getEnvVar("webhookSecret"))
+    .update(`id:${id};request-id:${requestId};ts:${ts};`)
+    .digest("hex");
+
+  req.setHeader("x-request-id", requestId);
+  req.setHeader("x-signature", `ts=${ts},v1=${v1}`);
+}
+
+docs {
+  Simula a notificação do Mercado Pago, assinando o manifest `id;request-id;ts` com o
+  `webhookSecret` do ambiente (o mesmo `MP_WEBHOOK_SECRET` do serviço). Preencha
+  `merchantOrderId` com a merchant_order de um pagamento criado no sandbox.
+
+  O corpo não decide nada: o Billing consulta a API do Mercado Pago. Assinatura inválida
+  responde 401; Mercado Pago fora do ar responde 502.
+}
+
+assert {
+  res.status: eq 200
+}

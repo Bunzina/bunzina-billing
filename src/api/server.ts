@@ -22,6 +22,7 @@ import { postgresMessageStore } from '@/infrastructure/messaging/message-store';
 import { postgresPaymentEventLog } from '@/infrastructure/persistence/postgres-payment-event-log';
 import { postgresPaymentRepository } from '@/infrastructure/persistence/postgres-payment-repository';
 import { postgresQuoteRepository } from '@/infrastructure/persistence/postgres-quote-repository';
+import { openapiDocs } from './openapi-docs';
 import { quoteRoutes } from './quote-routes';
 import { webhookRoutes } from './webhook-routes';
 import { startRelay } from '@/infrastructure/messaging/outbox-relay';
@@ -31,10 +32,8 @@ import {
   metricsContentType,
 } from '@/infrastructure/observability/metrics';
 import { tracing } from '@/infrastructure/observability/tracing';
-import openapi from '@elysiajs/openapi';
 import Elysia from 'elysia';
 import logger from '@lucas-pmelo/logger';
-import z from 'zod';
 
 export const app = new Elysia();
 
@@ -65,27 +64,7 @@ app.onError(({ request, set, error }) => {
   }
 });
 
-app.use(
-  openapi({
-    documentation: {
-      info: {
-        title: 'bunzina-billing API',
-        version: '1.0.0',
-        description: 'Microsserviço do Bunzina — Fase 4.',
-      },
-      tags: [
-        { name: 'Health', description: 'Verificação de saúde do serviço' },
-        { name: 'Quotes', description: 'Orçamentos emitidos pelo Billing' },
-        {
-          name: 'Webhooks',
-          description: 'Notificações do Mercado Pago',
-        },
-      ],
-    },
-    path: '/swagger',
-    mapJsonSchema: { zod: z.toJSONSchema },
-  }),
-);
+app.use(openapiDocs());
 
 app.get('/health', () => Response.json({ status: 'ok' }), {
   detail: { tags: ['Health'] },

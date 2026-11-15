@@ -1,4 +1,5 @@
 import type Elysia from 'elysia';
+import { z } from 'zod';
 import {
   createDecideQuote,
   decisionSchema,
@@ -7,6 +8,7 @@ import { createGetQuote } from '@/application/quote/get-quote';
 import type { PaymentRepository } from '@/domain/payment/payment-repository';
 import type { QuoteRepository } from '@/domain/quote/quote-repository';
 import type { MessageStore } from '@/infrastructure/messaging/message-store';
+import { errorResponse, quoteResponse } from './openapi-docs';
 
 type Dependencies = {
   quotes: QuoteRepository;
@@ -35,19 +37,23 @@ export const quoteRoutes = (dependencies: Dependencies) => {
           return quote ? Response.json(quote) : notFound();
         },
         {
+          headers: z.object({
+            'x-customer-document': z
+              .string()
+              .describe('Documento (CPF/CNPJ) do cliente dono do orçamento'),
+          }),
+          error: ({ code }) => (code === 'VALIDATION' ? notFound() : undefined),
           detail: {
             tags: ['Quotes'],
             summary: 'Consulta o orçamento',
             description:
-              'Devolve itens, totais, situação e o link de pagamento quando existe. O documento do cliente vai no header; documento divergente responde 404.',
-            parameters: [
-              {
-                name: 'X-Customer-Document',
-                in: 'header',
-                required: true,
-                schema: { type: 'string' },
-              },
-            ],
+              'Devolve itens, totais, situação e o link de pagamento quando existe. O documento do cliente vai no header `X-Customer-Document`; documento divergente, ausente ou id inválido respondem 404. Um orçamento emitido e vencido aparece como `EXPIRED`.',
+            responses: {
+              200: quoteResponse('Orçamento do cliente', true),
+              404: errorResponse(
+                'Orçamento inexistente, de outro cliente ou id inválido',
+              ),
+            },
           },
         },
       )
@@ -83,7 +89,38 @@ export const quoteRoutes = (dependencies: Dependencies) => {
             tags: ['Quotes'],
             summary: 'Aprova ou recusa o orçamento',
             description:
-              'Corpo com o documento do cliente e a decisão. Documento divergente responde 404.',
+              'Corpo com o documento do cliente e a decisão. Documento divergente responde 404; orçamento que já não está emitido, ou vencido, responde 409.',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['document', 'decision'],
+                    properties: {
+                      document: {
+                        type: 'string',
+                        description: 'Documento (CPF/CNPJ) do cliente',
+                      },
+                      decision: {
+                        type: 'string',
+                        enum: ['APPROVED', 'REJECTED'],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              200: quoteResponse('Orçamento com a decisão aplicada'),
+              400: errorResponse('Corpo inválido'),
+              404: errorResponse(
+                'Orçamento inexistente ou documento divergente',
+              ),
+              409: errorResponse(
+                'O orçamento não pode mais ser decidido (já decidido, cancelado ou vencido)',
+              ),
+            },
           },
         },
       );
