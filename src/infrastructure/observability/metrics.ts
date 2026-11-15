@@ -66,6 +66,21 @@ export const quotesTotal = new Counter({
   registers: [registry],
 });
 
+export const paymentsTotal = new Counter({
+  name: 'billing_payments_total',
+  help: 'Total number of payments, by the status they reached.',
+  labelNames: ['status'],
+  registers: [registry],
+});
+
+export const mercadopagoRequestDurationSeconds = new Histogram({
+  name: 'billing_mercadopago_request_duration_seconds',
+  help: 'Duration of Mercado Pago API calls in seconds, by operation and result.',
+  labelNames: ['operation', 'result'],
+  registers: [registry],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+});
+
 export const emailFailuresTotal = new Counter({
   name: 'billing_email_failures_total',
   help: 'Total number of emails that could not be sent, by template.',

@@ -52,6 +52,7 @@ app-chart:
       RABBITMQ_EXCHANGE: "bunzina.events"
       RABBITMQ_QUEUE: "bunzina-billing.inbox"
       QUOTE_VALIDITY_HOURS: "72"
+      PAYMENT_LINK_VALIDITY_MINUTES: "30"
       EMAIL_SMTP_HOST: "mailcatcher.observability.svc.cluster.local"
       EMAIL_SMTP_PORT: "1025"
       EMAIL: "no-reply@bunzina.local"

@@ -4,11 +4,13 @@ import {
   decisionSchema,
 } from '@/application/quote/decide-quote';
 import { createGetQuote } from '@/application/quote/get-quote';
+import type { PaymentRepository } from '@/domain/payment/payment-repository';
 import type { QuoteRepository } from '@/domain/quote/quote-repository';
 import type { MessageStore } from '@/infrastructure/messaging/message-store';
 
 type Dependencies = {
   quotes: QuoteRepository;
+  payments: PaymentRepository;
   store: MessageStore;
   clock: () => Date;
 };
@@ -37,7 +39,7 @@ export const quoteRoutes = (dependencies: Dependencies) => {
             tags: ['Quotes'],
             summary: 'Consulta o orçamento',
             description:
-              'Devolve itens, totais e situação. O documento do cliente vai no header; documento divergente responde 404.',
+              'Devolve itens, totais, situação e o link de pagamento quando existe. O documento do cliente vai no header; documento divergente responde 404.',
             parameters: [
               {
                 name: 'X-Customer-Document',

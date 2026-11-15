@@ -1,18 +1,23 @@
 import { z } from 'zod';
+import type { PaymentRepository } from '@/domain/payment/payment-repository';
 import { belongsToCustomer } from '@/domain/quote/quote';
 import type { QuoteRepository } from '@/domain/quote/quote-repository';
 import { toQuoteView, type QuoteView } from './quote-view';
 
-export type { QuoteView };
+export type QuoteWithCheckout = QuoteView & { checkoutUrl: string | null };
 
 type Dependencies = {
   quotes: QuoteRepository;
+  payments: PaymentRepository;
   clock: () => Date;
 };
 
 export const createGetQuote =
-  ({ quotes, clock }: Dependencies) =>
-  async (id: string, document: string | null): Promise<QuoteView | null> => {
+  ({ quotes, payments, clock }: Dependencies) =>
+  async (
+    id: string,
+    document: string | null,
+  ): Promise<QuoteWithCheckout | null> => {
     if (!document || !z.uuid().safeParse(id).success) {
       return null;
     }
@@ -23,5 +28,11 @@ export const createGetQuote =
       return null;
     }
 
-    return toQuoteView(quote, clock());
+    const payment = await payments.findByQuoteId(quote.id);
+
+    return {
+      ...toQuoteView(quote, clock()),
+      checkoutUrl:
+        payment?.status === 'PENDING' ? (payment.checkoutUrl ?? null) : null,
+    };
   };
