@@ -12,6 +12,8 @@ export type Payment = {
   provider: string;
   providerPaymentId?: string;
   checkoutUrl?: string;
+  method?: string;
+  paidAt?: Date;
   failureReason?: PaymentFailureReason;
   failureDetail?: string;
   createdAt: Date;
@@ -66,6 +68,11 @@ export const attachCheckout = (
     checkoutUrl: string;
   },
 ): Payment => ({ ...payment, providerPaymentId, checkoutUrl });
+
+export const confirmPayment = (
+  payment: Payment,
+  { method, paidAt }: { method: string; paidAt: Date },
+): Payment => ({ ...payment, status: 'CONFIRMED', method, paidAt });
 
 export const failPayment = (
   payment: Payment,

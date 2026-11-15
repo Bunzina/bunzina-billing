@@ -12,6 +12,9 @@ export const createInMemoryPaymentRepository = () => {
     all: () => Payment[];
     save: (payment: Payment) => void;
   } = {
+    async findById(id) {
+      return payments.get(id) ?? null;
+    },
     async findByQuoteId(quoteId) {
       return byQuote(quoteId);
     },
@@ -28,6 +31,13 @@ export const createInMemoryPaymentRepository = () => {
       payments.set(payment.id, payment);
     },
 
+    async confirmIfPending(_tx, confirmed) {
+      if (payments.get(confirmed.id)?.status !== 'PENDING') {
+        return false;
+      }
+      payments.set(confirmed.id, confirmed);
+      return true;
+    },
     all: () => [...payments.values()],
     save: (payment) => {
       payments.set(payment.id, payment);

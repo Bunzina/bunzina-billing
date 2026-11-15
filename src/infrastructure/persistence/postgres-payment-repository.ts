@@ -16,6 +16,8 @@ type PaymentRow = {
   provider: string;
   provider_payment_id: string | null;
   checkout_url: string | null;
+  method: string | null;
+  paid_at: Date | null;
   failure_reason: PaymentFailureReason | null;
   failure_detail: string | null;
   created_at: Date;
@@ -34,11 +36,19 @@ const toPayment = (row: PaymentRow): Payment => ({
     ? { providerPaymentId: row.provider_payment_id }
     : {}),
   ...(row.checkout_url ? { checkoutUrl: row.checkout_url } : {}),
+  ...(row.method ? { method: row.method } : {}),
+  ...(row.paid_at ? { paidAt: new Date(row.paid_at) } : {}),
   ...(row.failure_reason ? { failureReason: row.failure_reason } : {}),
   ...(row.failure_detail ? { failureDetail: row.failure_detail } : {}),
 });
 
 export const postgresPaymentRepository: PaymentRepository = {
+  async findById(id) {
+    const [row] = await db`
+      SELECT * FROM bunzina.payments WHERE id = ${id}
+    `;
+    return row ? toPayment(row as PaymentRow) : null;
+  },
   async findByQuoteId(quoteId) {
     const [row] = await db`
       SELECT * FROM bunzina.payments WHERE quote_id = ${quoteId}
@@ -70,5 +80,15 @@ export const postgresPaymentRepository: PaymentRepository = {
         ${payment.createdAt}, ${payment.createdAt}
       )
     `;
+  },
+  async confirmIfPending(tx, confirmed) {
+    const rows = await tx`
+      UPDATE bunzina.payments
+      SET status = 'CONFIRMED', method = ${confirmed.method ?? null},
+          paid_at = ${confirmed.paidAt ?? null}, updated_at = now()
+      WHERE id = ${confirmed.id} AND status = 'PENDING'
+      RETURNING id
+    `;
+    return rows.length > 0;
   },
 };

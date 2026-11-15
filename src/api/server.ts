@@ -1,6 +1,7 @@
 import '@/infrastructure/observability/logger-trace';
 
 import { createCancelQuoteHandler } from '@/application/quote/cancel-quote';
+import { createHandleNotification } from '@/application/payment/handle-notification';
 import { createChargeHandler } from '@/application/payment/charge-payment';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
 import { parsePaymentValidityMinutes } from '@/domain/payment/payment';
@@ -15,10 +16,12 @@ import { createNodemailerQuoteMailer } from '@/infrastructure/email/nodemailer-q
 import { createMercadoPagoPaymentGateway } from '@/infrastructure/mercadopago/mercadopago-payment-gateway';
 import { startConsumer } from '@/infrastructure/messaging/consumer';
 import { postgresMessageStore } from '@/infrastructure/messaging/message-store';
+import { postgresPaymentEventLog } from '@/infrastructure/persistence/postgres-payment-event-log';
 import { postgresPaymentReader } from '@/infrastructure/persistence/postgres-payment-reader';
 import { postgresPaymentRepository } from '@/infrastructure/persistence/postgres-payment-repository';
 import { postgresQuoteRepository } from '@/infrastructure/persistence/postgres-quote-repository';
 import { quoteRoutes } from './quote-routes';
+import { webhookRoutes } from './webhook-routes';
 import { startRelay } from '@/infrastructure/messaging/outbox-relay';
 import {
   createHttpMetrics,
@@ -71,6 +74,10 @@ app.use(
       tags: [
         { name: 'Health', description: 'Verificação de saúde do serviço' },
         { name: 'Quotes', description: 'Orçamentos emitidos pelo Billing' },
+        {
+          name: 'Webhooks',
+          description: 'Notificações do Mercado Pago',
+        },
       ],
     },
     path: '/swagger',
@@ -122,6 +129,30 @@ app.use(
     clock,
   }),
 );
+
+const mercadopagoToken = process.env.MP_ACCESS_TOKEN;
+const webhookSecret = process.env.MP_WEBHOOK_SECRET;
+if (mercadopagoToken && webhookSecret) {
+  app.use(
+    webhookRoutes({
+      secret: webhookSecret,
+      handleNotification: createHandleNotification({
+        payments: postgresPaymentRepository,
+        events: postgresPaymentEventLog,
+        gateway: createMercadoPagoPaymentGateway({
+          accessToken: mercadopagoToken,
+        }),
+        store: postgresMessageStore,
+        clock,
+      }),
+    }),
+  );
+} else if (import.meta.main) {
+  logger.warn({
+    message:
+      'MP_ACCESS_TOKEN or MP_WEBHOOK_SECRET is not set: POST /webhooks/mercadopago is not served',
+  });
+}
 
 app.get('/', ({ redirect }) => redirect('/swagger'), {
   detail: { hide: true },

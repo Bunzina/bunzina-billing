@@ -11,6 +11,11 @@ export type Checkout = {
   checkoutUrl: string;
 };
 
+export type ProviderOrder =
+  | { state: 'PAID'; method: string; paidAt: Date }
+  | { state: 'DECLINED'; detail: string }
+  | { state: 'OPEN' };
+
 export class PaymentGatewayError extends Error {
   constructor(
     message: string,
@@ -24,4 +29,6 @@ export class PaymentGatewayError extends Error {
 
 export interface PaymentGateway {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
+  findPaymentReference(notificationId: string): Promise<string | null>;
+  getOrder(providerPaymentId: string): Promise<ProviderOrder>;
 }

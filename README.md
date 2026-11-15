@@ -116,7 +116,7 @@ Depois da aprovação o orquestrador manda `cmd.billing.charge` com o `quoteId` 
 Billing cria o **Pagamento** e a order de Checkout Pro no Mercado Pago
 ([ADR 0002](docs/adr/0002-checkout-pro-via-orders-api.md)), grava o link, e envia o link ao
 cliente por e-mail. O link também sai em `GET /quotes/:id` (`checkoutUrl`, só enquanto o
-pagamento está pendente). A confirmação do pagamento é a fatia do webhook.
+pagamento está pendente). A confirmação chega pelo webhook, abaixo.
 
 - **Só orçamento aprovado e total igual.** Orçamento desconhecido, de outra OS, que não
   está aprovado, ou com total ou moeda diferentes do comando, vai direto para a DLQ.
@@ -134,9 +134,34 @@ pagamento está pendente). A confirmação do pagamento é a fatia do webhook.
 - **E-mail depois do commit**, como no orçamento: falha vira log e
   `billing_email_failures_total{template="payment-link"}`, e não desfaz a cobrança.
 
+### Webhook (`POST /webhooks/mercadopago`)
+
+O Mercado Pago notifica o webhook configurado no painel da aplicação
+([ADR 0002](docs/adr/0002-checkout-pro-via-orders-api.md)). O corpo nunca decide nada.
+
+- **Assinatura.** Sem `x-signature` válido (HMAC-SHA256 do manifest `id;request-id;ts` com
+  `MP_WEBHOOK_SECRET`) a resposta é `401`. Isso inclui o formato antigo (`?topic=&id=`), que não
+  traz `data.id`. Sem `MP_WEBHOOK_SECRET` ou `MP_ACCESS_TOKEN` a rota nem é servida.
+- **Estado vem da API.** O Billing consulta a `merchant_order` (traz o `external_reference`, o id
+  do Pagamento), acha o Pagamento e consulta a order pelo `provider_payment_id`.
+- **Tudo fica em `payment_events`.** Cada notificação grava `webhook-received` ou
+  `webhook-rejected` antes de qualquer consulta. O desfecho vira outra linha com o
+  `payment_id`: `payment-confirmed`, `payment-approval-ignored` (o pagamento já não estava
+  pendente), `payment-declined` ou `webhook-unmatched`.
+- **Confirma uma vez.** `UPDATE ... WHERE status = 'PENDING'` e o `payment-confirmed` entram na
+  mesma transação. Duplicata, notificação fora de ordem ou duas réplicas ao mesmo tempo: só quem
+  muda a linha publica. `payment-confirmed` leva o id do provedor (a order), o método
+  (`pix`, `credit_card`...) e `paidAt`, que é a última atualização da order.
+- **Cartão recusado** só entra no registro: não publica `payment-failed` e não altera o Pagamento
+  ([ADR 0001](docs/adr/0001-payment-failure-and-late-payment.md)).
+- **Provedor fora do ar** responde `502`, para o Mercado Pago entregar de novo. Notificação sem
+  Pagamento correspondente responde `200` (não adianta repetir).
+- Pagamento aprovado que chega com o Pagamento já cancelado ou expirado é só registrado
+  aqui. O estorno automático é a fatia seguinte.
+
 Métricas: `billing_payments_total{status}` e
-`billing_mercadopago_request_duration_seconds{operation,result}` (`operation="create_order"`,
-`result` `success` ou `error`).
+`billing_mercadopago_request_duration_seconds{operation,result}` (`operation` é `create_order`,
+`get_merchant_order` ou `get_order`; `result` é `success` ou `error`).
 
 | Variável | Padrão | Uso |
 | --- | --- | --- |
@@ -144,7 +169,7 @@ Métricas: `billing_payments_total{status}` e
 | `EMAIL_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — | Servidor SMTP |
 | `EMAIL` | `bunzina@local.com` | Remetente |
 | `PAYMENT_LINK_VALIDITY_MINUTES` | `30` | Validade do link de pagamento, em minutos inteiros; vazio ou inválido volta para 30 |
-| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret). Sem ele o `cmd.billing.charge` não é consumido e vai para a DLQ |
+| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret). Sem ele o `cmd.billing.charge` não é consumido e vai para a DLQ, e o webhook não é servido |
 | `MP_WEBHOOK_SECRET` | — | Segredo de assinatura do webhook do Mercado Pago (secret) |
 | `PUBLIC_BASE_URL` | — | Endereço público do ALB, base das URLs que o Mercado Pago chama |
 
