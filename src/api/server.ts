@@ -1,8 +1,8 @@
 import '@/infrastructure/observability/logger-trace';
 
 import { createCancelQuoteHandler } from '@/application/quote/cancel-quote';
-import { createHandleNotification } from '@/application/payment/handle-notification';
 import { createChargeHandler } from '@/application/payment/charge-payment';
+import { createHandleNotification } from '@/application/payment/handle-notification';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
 import { parsePaymentValidityMinutes } from '@/domain/payment/payment';
 import { parseValidityHours } from '@/domain/quote/quote';
@@ -143,7 +143,6 @@ if (mercadopagoToken && webhookSecret) {
           accessToken: mercadopagoToken,
         }),
         store: postgresMessageStore,
-        clock,
       }),
     }),
   );

@@ -8,7 +8,12 @@ type Dependencies = {
   handleNotification: ReturnType<typeof createHandleNotification>;
 };
 
+const MAX_RECORDED_BODY_BYTES = 8 * 1024;
+
 const parseBody = (raw: string): unknown => {
+  if (raw.length > MAX_RECORDED_BODY_BYTES) {
+    return { truncated: raw.slice(0, MAX_RECORDED_BODY_BYTES) };
+  }
   try {
     return JSON.parse(raw);
   } catch {

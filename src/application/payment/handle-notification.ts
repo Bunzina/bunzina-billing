@@ -1,5 +1,8 @@
 import { confirmPayment, type Payment } from '@/domain/payment/payment';
-import type { PaymentEventLog } from '@/domain/payment/payment-event-log';
+import type {
+  PaymentEventLog,
+  PaymentEventType,
+} from '@/domain/payment/payment-event-log';
 import type {
   PaymentGateway,
   ProviderOrder,
@@ -24,7 +27,6 @@ type Dependencies = {
   events: PaymentEventLog;
   gateway: PaymentGateway;
   store: MessageStore;
-  clock: () => Date;
 };
 
 type Paid = Extract<ProviderOrder, { state: 'PAID' }>;
@@ -70,7 +72,7 @@ export const createHandleNotification = ({
     });
 
   const record = (
-    type: string,
+    type: PaymentEventType,
     payload: Record<string, unknown>,
     paymentId?: string,
   ) =>

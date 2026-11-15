@@ -198,12 +198,18 @@ describe('MercadoPagoPaymentGateway.findPaymentReference', () => {
     });
   });
 
-  it('answers null for a merchant order the provider does not know or that has no reference', async () => {
-    const unknown = gatewayAnswering(() => new Response(null, { status: 404 }));
+  it('answers null for a merchant order that has no reference', async () => {
     const bare = gatewayAnswering(() => Response.json({ id: 1 }));
 
-    expect(await unknown.gateway.findPaymentReference('1')).toBeNull();
     expect(await bare.gateway.findPaymentReference('1')).toBeNull();
+  });
+
+  it('treats a merchant order that is not visible yet as retryable, so the notification is not lost', async () => {
+    const unknown = gatewayAnswering(() => new Response(null, { status: 404 }));
+
+    expect(
+      await unknown.gateway.findPaymentReference('1').catch((e) => e),
+    ).toMatchObject({ retryable: true, providerStatus: 'http_404' });
   });
 
   it('maps provider failures to gateway errors', async () => {

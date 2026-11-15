@@ -74,7 +74,6 @@ const newInstance = (gateway: ReturnType<typeof createFakePaymentGateway>) =>
     events: postgresPaymentEventLog,
     gateway,
     store: postgresMessageStore,
-    clock: () => NOW,
   });
 
 const eventTypes = async () =>

@@ -1,8 +1,16 @@
 import type { Tx } from '@/infrastructure/messaging/message-store';
 
+export type PaymentEventType =
+  | 'webhook-received'
+  | 'webhook-rejected'
+  | 'webhook-unmatched'
+  | 'payment-confirmed'
+  | 'payment-approval-ignored'
+  | 'payment-declined';
+
 export type PaymentEvent = {
   paymentId?: string;
-  type: string;
+  type: PaymentEventType;
   payload: Record<string, unknown>;
 };
 

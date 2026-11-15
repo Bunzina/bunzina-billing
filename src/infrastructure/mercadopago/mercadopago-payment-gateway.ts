@@ -70,14 +70,20 @@ export const createMercadoPagoPaymentGateway = ({
   baseUrl = DEFAULT_BASE_URL,
   fetch: fetchImpl = fetch,
 }: Input): PaymentGateway => {
-  const read = async (operation: string, path: string): Promise<Response> => {
+  const call = async <T>(
+    operation: string,
+    path: string,
+    init: RequestInit,
+    parse: (response: Response) => Promise<T>,
+    { retryNotFound = false } = {},
+  ): Promise<T> => {
     const stopTimer = mercadopagoRequestDurationSeconds.startTimer({
       operation,
     });
     try {
       const response = await fetchImpl(`${baseUrl}${path}`, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${accessToken}` },
+        ...init,
+        headers: { Authorization: `Bearer ${accessToken}`, ...init.headers },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       }).catch(() => {
         throw new PaymentGatewayError(
@@ -86,15 +92,17 @@ export const createMercadoPagoPaymentGateway = ({
           'unreachable',
         );
       });
-      if (!response.ok && response.status !== 404) {
+      if (!response.ok) {
         throw new PaymentGatewayError(
           `mercadopago ${operation} answered ${response.status}`,
-          isRetryableStatus(response.status),
+          isRetryableStatus(response.status) ||
+            (retryNotFound && response.status === 404),
           `http_${response.status}`,
         );
       }
+      const result = await parse(response);
       stopTimer({ result: 'success' });
-      return response;
+      return result;
     } catch (error) {
       stopTimer({ result: 'error' });
       throw error;
@@ -102,42 +110,40 @@ export const createMercadoPagoPaymentGateway = ({
   };
 
   return {
-    async findPaymentReference(notificationId) {
-      const response = await read(
+    findPaymentReference: (notificationId) =>
+      call(
         'get_merchant_order',
         `/merchant_orders/${encodeURIComponent(notificationId)}`,
-      );
-      const body = (await response.json().catch(() => null)) as {
-        external_reference?: unknown;
-      } | null;
+        { method: 'GET' },
+        async (response) => {
+          const body = (await response.json().catch(() => null)) as {
+            external_reference?: unknown;
+          } | null;
 
-      return typeof body?.external_reference === 'string' &&
-        body.external_reference
-        ? body.external_reference
-        : null;
-    },
+          return typeof body?.external_reference === 'string' &&
+            body.external_reference
+            ? body.external_reference
+            : null;
+        },
+        { retryNotFound: true },
+      ),
 
-    async getOrder(providerPaymentId) {
-      const response = await read(
+    getOrder: (providerPaymentId) =>
+      call(
         'get_order',
         `/v1/orders/${encodeURIComponent(providerPaymentId)}`,
-      );
-      if (!response.ok) {
-        throw new PaymentGatewayError(
-          'mercadopago get_order answered 404',
-          false,
-          'http_404',
-        );
-      }
-      const body = (await response
-        .json()
-        .catch(() => null)) as ProviderOrderBody | null;
-      if (!body || typeof body.status !== 'string') {
-        throw invalidResponse('get_order');
-      }
+        { method: 'GET' },
+        async (response) => {
+          const body = (await response
+            .json()
+            .catch(() => null)) as ProviderOrderBody | null;
+          if (!body || typeof body.status !== 'string') {
+            throw invalidResponse('get_order');
+          }
 
-      return toProviderOrder(body);
-    },
+          return toProviderOrder(body);
+        },
+      ),
 
     async createCheckout(request) {
       if (request.currency !== SUPPORTED_CURRENCY) {
@@ -147,17 +153,14 @@ export const createMercadoPagoPaymentGateway = ({
           'unsupported_currency',
         );
       }
-
       const amount = toProviderAmount(request.amountCents);
-      const stopTimer = mercadopagoRequestDurationSeconds.startTimer({
-        operation: 'create_order',
-      });
 
-      try {
-        const response = await fetchImpl(`${baseUrl}/v1/orders`, {
+      return call(
+        'create_order',
+        '/v1/orders',
+        {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
             'X-Idempotency-Key': request.paymentId,
           },
@@ -172,46 +175,29 @@ export const createMercadoPagoPaymentGateway = ({
             ],
             config: { payment_method: { not_allowed_types: ['ticket'] } },
           }),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        }).catch(() => {
-          throw new PaymentGatewayError(
-            'mercadopago create_order is unreachable',
-            true,
-            'unreachable',
-          );
-        });
+        },
+        async (response) => {
+          const order = (await response.json().catch(() => null)) as {
+            id?: unknown;
+            checkout_url?: unknown;
+          } | null;
+          if (
+            typeof order?.id !== 'string' ||
+            typeof order.checkout_url !== 'string'
+          ) {
+            throw new PaymentGatewayError(
+              'mercadopago create_order answered without an order id or checkout link',
+              false,
+              'invalid_response',
+            );
+          }
 
-        if (!response.ok) {
-          throw new PaymentGatewayError(
-            `mercadopago create_order answered ${response.status}`,
-            isRetryableStatus(response.status),
-            `http_${response.status}`,
-          );
-        }
-
-        const order = (await response.json().catch(() => null)) as {
-          id?: unknown;
-          checkout_url?: unknown;
-        } | null;
-
-        if (
-          typeof order?.id !== 'string' ||
-          typeof order.checkout_url !== 'string'
-        ) {
-          throw new PaymentGatewayError(
-            'mercadopago create_order answered without an order id or checkout link',
-            false,
-            'invalid_response',
-          );
-        }
-
-        stopTimer({ result: 'success' });
-
-        return { providerPaymentId: order.id, checkoutUrl: order.checkout_url };
-      } catch (error) {
-        stopTimer({ result: 'error' });
-        throw error;
-      }
+          return {
+            providerPaymentId: order.id,
+            checkoutUrl: order.checkout_url,
+          };
+        },
+      );
     },
   };
 };

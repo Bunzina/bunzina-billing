@@ -19,7 +19,7 @@ No sandbox o estorno pela API de pagamentos devolveu `401 Unauthorized use of li
 
 - O endereço do webhook é o configurado no painel da aplicação, não um campo da order: a criação por Orders não tem `notification_url`.
 - Chegaram notificações `type=topic_merchant_order_wh`, com `data_id` na query. Notificação de pagamento ou de Orders não chegou, mas o painel pode ter sido configurado só com esse evento.
-- Assinatura confirmada: HMAC-SHA256 em hex do manifest `id:<data_id>;request-id:<x-request-id>;ts:<ts>;`, com a assinatura secreta como chave, comparada com o `v1` do header `x-signature`. Notificações no formato antigo (`?topic=...&id=...`), que também chegam quando se usa preferência, **não** validam nesse esquema e devem ser ignoradas.
+- Assinatura confirmada: HMAC-SHA256 em hex do manifest `id:<data_id>;request-id:<x-request-id>;ts:<ts>;`, com a assinatura secreta como chave, comparada com o `v1` do header `x-signature`. Notificações no formato antigo (`?topic=...&id=...`), que também chegam quando se usa preferência, **não** validam nesse esquema e devem ser ignoradas: o handler responde `401` e só registra `webhook-rejected`, sem processar.
 - O corpo da notificação não traz `external_reference`. O handler consulta a `merchant_order` (`GET /merchant_orders/{id}`), que traz `external_reference`, `order_status` e `payments[].id`, e então consulta a order. É o que o spec já pedia: não confiar só no corpo.
 - Chegam notificações duplicadas e atrasadas (uma repetiu 17 minutos depois). A idempotência por atualização condicional do spec cobre isso.
 
@@ -39,5 +39,5 @@ Respostas reais para o gateway fake estão em `docs/mercadopago/fixtures/`.
 ## Consequences
 
 - O spec #2 e o ADR 0001 falam em "preferência". Onde se lê preferência, leia-se order.
-- A porta `PaymentGateway` não muda de forma, só de implementação: continua com criar, consultar, estornar e expirar.
+- A porta `PaymentGateway` não muda de forma, só de implementação: continua com criar, consultar, estornar e expirar. A consulta se divide em `findPaymentReference` (a `merchant_order` da notificação) e `getOrder`; a primeira trata `404` como repetível, porque a notificação pode chegar antes de a `merchant_order` ser consultável.
 - O token usado em teste continua sendo o da aplicação. O wizard deixa de afirmar que ele começa com `TEST-`.

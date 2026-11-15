@@ -70,7 +70,6 @@ beforeEach(() => {
         events,
         gateway,
         store: database.store,
-        clock: () => new Date('2026-09-17T14:31:09.000Z'),
       }),
     }),
   );
@@ -121,6 +120,19 @@ describe('POST /webhooks/mercadopago', () => {
     ]);
     expect(gateway.lookups).toEqual([]);
     expect(database.pendingEvents()).toEqual([]);
+  });
+});
+
+describe('POST /webhooks/mercadopago recording', () => {
+  it('keeps only the start of an oversized body from an unauthenticated caller', async () => {
+    const response = await notify({
+      signature: 'ts=1,v1=00',
+      body: 'x'.repeat(100_000),
+    });
+
+    const [event] = events.all();
+    expect(response.status).toBe(401);
+    expect(JSON.stringify(event?.payload).length).toBeLessThan(10_000);
   });
 });
 

@@ -145,7 +145,7 @@ O Mercado Pago notifica o webhook configurado no painel da aplicação
 - **Estado vem da API.** O Billing consulta a `merchant_order` (traz o `external_reference`, o id
   do Pagamento), acha o Pagamento e consulta a order pelo `provider_payment_id`.
 - **Tudo fica em `payment_events`.** Cada notificação grava `webhook-received` ou
-  `webhook-rejected` antes de qualquer consulta. O desfecho vira outra linha com o
+  `webhook-rejected` antes de qualquer consulta (o corpo gravado é cortado em 8 KiB). O desfecho vira outra linha com o
   `payment_id`: `payment-confirmed`, `payment-approval-ignored` (o pagamento já não estava
   pendente), `payment-declined` ou `webhook-unmatched`.
 - **Confirma uma vez.** `UPDATE ... WHERE status = 'PENDING'` e o `payment-confirmed` entram na
@@ -154,7 +154,7 @@ O Mercado Pago notifica o webhook configurado no painel da aplicação
   (`pix`, `credit_card`...) e `paidAt`, que é a última atualização da order.
 - **Cartão recusado** só entra no registro: não publica `payment-failed` e não altera o Pagamento
   ([ADR 0001](docs/adr/0001-payment-failure-and-late-payment.md)).
-- **Provedor fora do ar** responde `502`, para o Mercado Pago entregar de novo. Notificação sem
+- **Provedor fora do ar**, ou `merchant_order` ainda não consultável (`404`), responde `502`, para o Mercado Pago entregar de novo. Notificação sem
   Pagamento correspondente responde `200` (não adianta repetir).
 - Pagamento aprovado que chega com o Pagamento já cancelado ou expirado é só registrado
   aqui. O estorno automático é a fatia seguinte.
