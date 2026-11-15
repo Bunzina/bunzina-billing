@@ -1,6 +1,6 @@
 [test]
 root = "."
-preload = ["./src/test/setup.ts"]
+preload = ["./src/test/integration-setup.ts", "./src/test/setup.ts"]
 testTimeout = 60000
 coverage = true
 coverageReporter = ["text", "lcov"]

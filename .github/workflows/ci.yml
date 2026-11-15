@@ -69,19 +69,19 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_DB: bunzina-billing
+          POSTGRES_DB: bunzina-billing-test
           POSTGRES_USER: bun
           POSTGRES_PASSWORD: bun
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U bun -d bunzina-billing"
+          --health-cmd "pg_isready -U bun -d bunzina-billing-test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
 
     env:
-      DATABASE_URL: postgres://bun:bun@localhost:5432/bunzina-billing
+      DATABASE_URL: postgres://bun:bun@localhost:5432/bunzina-billing-test
 
     steps:
       - name: Checkout
@@ -96,7 +96,7 @@ jobs:
         run: bun install
 
       - name: Run integration tests
-        run: bun run test:integration
+        run: bun run test:integration:run
 
       - name: Upload integration coverage
         uses: actions/upload-artifact@v4

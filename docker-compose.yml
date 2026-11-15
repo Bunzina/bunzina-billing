@@ -44,6 +44,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # Throwaway Postgres for `bun run test:integration` (the suite truncates tables).
+  db-test:
+    image: postgres:15
+    profiles: ['test']
+    environment:
+      POSTGRES_DB: bunzina-billing-test
+      POSTGRES_USER: bun
+      POSTGRES_PASSWORD: bun
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bun -d bunzina-billing-test']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
   rabbitmq:
     image: rabbitmq:3.13-management
     environment:

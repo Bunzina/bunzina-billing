@@ -3,7 +3,6 @@ import {
   applyMigrations,
   countRows,
   db,
-  hasIntegrationDatabase,
   resetMessagingTables,
 } from '@/test/integration-database';
 import {
@@ -98,7 +97,7 @@ const seedOutbox = async (count: number) => {
   });
 };
 
-describe.skipIf(!hasIntegrationDatabase)('messaging against Postgres', () => {
+describe('messaging against Postgres', () => {
   beforeAll(async () => {
     await applyMigrations();
   });

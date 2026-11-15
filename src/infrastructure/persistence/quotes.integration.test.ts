@@ -16,7 +16,6 @@ import {
   applyMigrations,
   countRows,
   db,
-  hasIntegrationDatabase,
   resetQuoteTables,
 } from '@/test/integration-database';
 import { createFakeMailer } from '@/test/fake-mailer';
@@ -122,7 +121,7 @@ const newQuote = (serviceOrderId: string) =>
     validityHours: 72,
   });
 
-describe.skipIf(!hasIntegrationDatabase)('quotes against Postgres', () => {
+describe('quotes against Postgres', () => {
   beforeAll(async () => {
     await applyMigrations();
   });
