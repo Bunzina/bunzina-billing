@@ -79,6 +79,7 @@ describe('Swagger document', () => {
     expect(operation).toBeDefined();
     expect(operation?.parameters).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ name: 'data_id', in: 'query' }),
         expect.objectContaining({ name: 'x-signature', in: 'header' }),
         expect.objectContaining({ name: 'x-request-id', in: 'header' }),
       ]),

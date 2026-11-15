@@ -83,10 +83,10 @@ export const webhookRoutes =
           tags: ['Webhooks'],
           summary: 'Notificação do Mercado Pago',
           description:
-            'Valida o x-signature (HMAC-SHA256 do manifest `id;request-id;ts`), consulta o estado na API do Mercado Pago e confirma o pagamento uma única vez. O corpo nunca decide nada; o id da notificação vem em `data.id` na query.',
+            'Valida o x-signature (HMAC-SHA256 do manifest `id;request-id;ts`), consulta o estado na API do Mercado Pago e confirma o pagamento uma única vez. O corpo nunca decide nada; o id da notificação vem em `data_id` na query (o formato `data.id` também é aceito).',
           parameters: [
             {
-              name: 'data.id',
+              name: 'data_id',
               in: 'query',
               required: true,
               schema: { type: 'string' },

@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/webhooks/mercadopago?data.id={{merchantOrderId}}&type=topic_merchant_order_wh
+  url: {{baseUrl}}/webhooks/mercadopago?data_id={{merchantOrderId}}&type=topic_merchant_order_wh
   body: json
   auth: none
 }
