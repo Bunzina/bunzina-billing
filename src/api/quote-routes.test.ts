@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import Elysia from 'elysia';
 import { issueQuote, type Quote } from '@/domain/quote/quote';
+import { createPendingPayment, attachCheckout } from '@/domain/payment/payment';
+import { createInMemoryPaymentRepository } from '@/test/in-memory-payment-repository';
 import { createInMemoryMessageStore } from '@/test/in-memory-message-store';
 import { createInMemoryQuoteRepository } from '@/test/in-memory-quote-repository';
 import { quoteRoutes } from './quote-routes';
@@ -8,6 +10,7 @@ import { quoteRoutes } from './quote-routes';
 const NOW = new Date('2026-09-17T14:03:22.115Z');
 
 let quotes: ReturnType<typeof createInMemoryQuoteRepository>;
+let payments: ReturnType<typeof createInMemoryPaymentRepository>;
 let database: ReturnType<typeof createInMemoryMessageStore>;
 let now: Date;
 let app: { handle: (request: Request) => Response | Promise<Response> };
@@ -23,9 +26,15 @@ const get = (id: string, document?: string) =>
 beforeEach(() => {
   now = NOW;
   quotes = createInMemoryQuoteRepository();
+  payments = createInMemoryPaymentRepository();
   database = createInMemoryMessageStore();
   app = new Elysia().use(
-    quoteRoutes({ quotes, store: database.store, clock: () => now }),
+    quoteRoutes({
+      quotes,
+      payments,
+      store: database.store,
+      clock: () => now,
+    }),
   );
   quote = issueQuote({
     serviceOrderId: crypto.randomUUID(),
@@ -74,7 +83,55 @@ describe('GET /quotes/:id', () => {
       totalCents: 21000,
       currency: 'BRL',
       expiresAt: '2026-09-20T14:03:22.115Z',
+      checkoutUrl: null,
     });
+  });
+
+  it('returns the checkout link once the quote has a pending payment', async () => {
+    payments.save(
+      attachCheckout(
+        createPendingPayment({
+          quoteId: quote.id,
+          serviceOrderId: quote.serviceOrderId,
+          amountCents: quote.totalCents,
+          currency: 'BRL',
+          now: NOW,
+        }),
+        {
+          providerPaymentId: 'ORDTST1',
+          checkoutUrl:
+            'https://www.mercadopago.com.br/checkout/v1/redirect?x=1',
+        },
+      ),
+    );
+
+    const body = (await (await get(quote.id, '12345678901')).json()) as {
+      checkoutUrl: string | null;
+    };
+
+    expect(body.checkoutUrl).toBe(
+      'https://www.mercadopago.com.br/checkout/v1/redirect?x=1',
+    );
+  });
+
+  it('returns no checkout link when the payment failed', async () => {
+    payments.save({
+      ...createPendingPayment({
+        quoteId: quote.id,
+        serviceOrderId: quote.serviceOrderId,
+        amountCents: quote.totalCents,
+        currency: 'BRL',
+        now: NOW,
+      }),
+      status: 'FAILED',
+      failureReason: 'PROVIDER_ERROR',
+    });
+
+    const body = (await (await get(quote.id, '12345678901')).json()) as {
+      checkoutUrl: string | null;
+    };
+
+    expect(body.checkoutUrl).toBeNull();
   });
 
   it('accepts the document with punctuation', async () => {

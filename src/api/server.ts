@@ -1,17 +1,22 @@
 import '@/infrastructure/observability/logger-trace';
 
 import { createCancelQuoteHandler } from '@/application/quote/cancel-quote';
+import { createChargeHandler } from '@/application/payment/charge-payment';
 import { createIssueQuoteHandler } from '@/application/quote/issue-quote';
+import { parsePaymentValidityMinutes } from '@/domain/payment/payment';
 import { parseValidityHours } from '@/domain/quote/quote';
 import { db } from '@/infrastructure/configs/database';
 import {
   DEFAULT_EMAIL,
   emailTransporter,
 } from '@/infrastructure/configs/email-transporter';
+import { createNodemailerPaymentMailer } from '@/infrastructure/email/nodemailer-payment-mailer';
 import { createNodemailerQuoteMailer } from '@/infrastructure/email/nodemailer-quote-mailer';
+import { createMercadoPagoPaymentGateway } from '@/infrastructure/mercadopago/mercadopago-payment-gateway';
 import { startConsumer } from '@/infrastructure/messaging/consumer';
 import { postgresMessageStore } from '@/infrastructure/messaging/message-store';
 import { postgresPaymentReader } from '@/infrastructure/persistence/postgres-payment-reader';
+import { postgresPaymentRepository } from '@/infrastructure/persistence/postgres-payment-repository';
 import { postgresQuoteRepository } from '@/infrastructure/persistence/postgres-quote-repository';
 import { quoteRoutes } from './quote-routes';
 import { startRelay } from '@/infrastructure/messaging/outbox-relay';
@@ -102,9 +107,17 @@ async function checkDependencies(): Promise<void> {
 
 const clock = () => new Date();
 
+const PROVIDER_RETRY = {
+  maxAttempts: 3,
+  baseDelayMs: 500,
+  sleep: (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+};
+
 app.use(
   quoteRoutes({
     quotes: postgresQuoteRepository,
+    payments: postgresPaymentRepository,
     store: postgresMessageStore,
     clock,
   }),
@@ -123,6 +136,15 @@ if (import.meta.main) {
   });
 
   if (process.env.RABBITMQ_URL) {
+    const mercadopagoToken = process.env.MP_ACCESS_TOKEN;
+
+    if (!mercadopagoToken) {
+      logger.warn({
+        message:
+          'MP_ACCESS_TOKEN is not set: cmd.billing.charge will be dead-lettered',
+      });
+    }
+
     void startConsumer({
       bindings: ['cmd.billing.*'],
       handlers: {
@@ -140,6 +162,26 @@ if (import.meta.main) {
           payments: postgresPaymentReader,
           clock,
         }),
+        ...(mercadopagoToken
+          ? {
+              'cmd.billing.charge': createChargeHandler({
+                quotes: postgresQuoteRepository,
+                payments: postgresPaymentRepository,
+                gateway: createMercadoPagoPaymentGateway({
+                  accessToken: mercadopagoToken,
+                }),
+                mailer: createNodemailerPaymentMailer({
+                  transporter: emailTransporter,
+                  from: DEFAULT_EMAIL,
+                }),
+                clock,
+                validityMinutes: parsePaymentValidityMinutes(
+                  process.env.PAYMENT_LINK_VALIDITY_MINUTES,
+                ),
+                retry: PROVIDER_RETRY,
+              }),
+            }
+          : {}),
       },
     }).catch((error: unknown) => {
       logger.error({

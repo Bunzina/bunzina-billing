@@ -110,12 +110,41 @@ e envia o orçamento ao cliente por e-mail.
   devolve itens, totais e situação. Documento divergente, ausente ou id inválido
   respondem 404. Um orçamento emitido e vencido aparece como `EXPIRED`.
 
+### Cobrança (`cmd.billing.charge`)
+
+Depois da aprovação o orquestrador manda `cmd.billing.charge` com o `quoteId` e o total. O
+Billing cria o **Pagamento** e a order de Checkout Pro no Mercado Pago
+([ADR 0002](docs/adr/0002-checkout-pro-via-orders-api.md)), grava o link, e envia o link ao
+cliente por e-mail. O link também sai em `GET /quotes/:id` (`checkoutUrl`, só enquanto o
+pagamento está pendente). A confirmação do pagamento é a fatia do webhook.
+
+- **Só orçamento aprovado e total igual.** Orçamento desconhecido, de outra OS, que não
+  está aprovado, ou com total ou moeda diferentes do comando, vai direto para a DLQ.
+- **Um pagamento por orçamento.** O índice único `uq_payments_quote_id` garante isso. Outra
+  cobrança para o mesmo orçamento não chama o provedor nem envia outro e-mail.
+- **Erro do provedor.** Erro transitório (rede, 429, 5xx) é repetido até 3 vezes dentro do
+  handler, com backoff. Esgotadas as tentativas, ou diante de um erro que não adianta repetir
+  (outro 4xx), o pagamento fica `FAILED` com `PROVIDER_ERROR` e sai `evt.billing.payment-failed`.
+  Esse pagamento não é cobrado de novo: reenviar o comando só reemite o evento. O
+  `providerStatus` do evento é `http_<código>` ou `unreachable`, e fica em `failure_detail`.
+- **Mercado Pago por HTTP direto**, sem SDK (`src/infrastructure/mercadopago`). Os centavos viram
+  o decimal do provedor (`"210.05"`) só ali. A order sai com `expiration_time` em ISO 8601 e
+  `not_allowed_types: ["ticket"]` (boleto fora), e o id do Pagamento como `external_reference`
+  e `X-Idempotency-Key`. Só `BRL` é aceita.
+- **E-mail depois do commit**, como no orçamento: falha vira log e
+  `billing_email_failures_total{template="payment-link"}`, e não desfaz a cobrança.
+
+Métricas: `billing_payments_total{status}` e
+`billing_mercadopago_request_duration_seconds{operation,result}` (`operation="create_order"`,
+`result` `success` ou `error`).
+
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `QUOTE_VALIDITY_HOURS` | `72` | Validade do orçamento; vazio ou inválido volta para 72 |
 | `EMAIL_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | — | Servidor SMTP |
 | `EMAIL` | `bunzina@local.com` | Remetente |
-| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret) |
+| `PAYMENT_LINK_VALIDITY_MINUTES` | `30` | Validade do link de pagamento, em minutos inteiros; vazio ou inválido volta para 30 |
+| `MP_ACCESS_TOKEN` | — | Token do Mercado Pago (secret). Sem ele o `cmd.billing.charge` não é consumido e vai para a DLQ |
 | `MP_WEBHOOK_SECRET` | — | Segredo de assinatura do webhook do Mercado Pago (secret) |
 | `PUBLIC_BASE_URL` | — | Endereço público do ALB, base das URLs que o Mercado Pago chama |
 
